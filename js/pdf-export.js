@@ -1388,4 +1388,12 @@ async function splitChildFlowElement(node, currentPage, createPage) {
     }
   }
   return { page, didSplit };
+  // ============================================================
+// WINDOW EXPOSURE – PDF Export
+// ============================================================
+window.exportToHighQualityPDF = exportToHighQualityPDF;
+window.exportToImagePDF = exportToImagePDF;
+window.exportToWordDocument = exportToWordDocument;
+window.generateLivePDFIframePreview = generateLivePDFIframePreview;
+window.invalidatePDFPreviewCache = invalidatePDFPreviewCache;
 }
