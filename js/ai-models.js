@@ -571,4 +571,29 @@ function classifyAIError(err) {
   const emptyOrMalformed = kind === 'empty_response' || kind === 'malformed_response';
   const retryableLocally = !authOrConfig && !unavailable && !quota && (transient || httpRetryable || emptyOrMalformed);
   return { status, detail, kind, quota, unavailable, transient, httpRetryable, authOrConfig, emptyOrMalformed, retryableLocally, shouldFallback: true };
+// ============================================================
+// WINDOW EXPOSURE – AI Models
+// ============================================================
+window.openAIModelsModal = openAIModelsModal;
+window.closeAIModelsModal = closeAIModelsModal;
+window.toggleAIModelsInfo = toggleAIModelsInfo;
+window.handleAutoSwitchToggle = handleAutoSwitchToggle;
+window.importAIModels = importAIModels;
+window.exportAIModels = exportAIModels;
+window.toggleAIModelAddForm = toggleAIModelAddForm;
+window.clearAIModelForm = clearAIModelForm;
+window.handleAddNewAIModel = handleAddNewAIModel;
+window.loadAIModelsState = loadAIModelsState;
+window.saveAIModelsState = saveAIModelsState;
+window.getActiveAIModel = getActiveAIModel;
+window.setActiveAIModel = setActiveAIModel;
+window.testAIModelConnection = testAIModelConnection;
+window.renderAIModelSelectBar = renderAIModelSelectBar;
+window.sizeAIModelSelect = sizeAIModelSelect;
+window.switchActiveModelTo = switchActiveModelTo;
+window.getAutoSwitchEnabled = getAutoSwitchEnabled;
+window.markModelSuccess = markModelSuccess;
+window.markModelFailure = markModelFailure;
+window.classifyAIError = classifyAIError;
+window.describeAIErrorForToast = describeAIErrorForToast;
 }
