@@ -5,6 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
   <title>AI PDF & Word Studio - Multi‑Tab Pro • Full Unified PDF Engine</title>
 
+  <!-- ===== CORE FUNCTION POLYFILLS (MUST BE IN HEAD) ===== -->
+  <script>
+    // Missing dependencies fix for math-renderer.js & document-editor.js
+    var findBrokenDiagrams = function(container) {
+        return []; 
+    };
+
+    var applyPDFVisualFormat = function(formatName) {
+        var canvases = document.querySelectorAll('.doc-page-canvas');
+        canvases.forEach(function(canvas) {
+            canvas.className = canvas.className.replace(/pdf-format-\w+/g, '').replace(/text-format-\w+/g, '');
+            if (formatName && formatName !== 'none' && formatName !== 'default') {
+                canvas.classList.add(formatName.includes('format-') ? formatName : 'pdf-format-' + formatName);
+            }
+        });
+    };
+
+    // Global UI Action Handlers
+    var toggleDarkMode = function() {
+        var isDark = document.documentElement.classList.toggle('dark');
+        localStorage.setItem('studio_theme', isDark ? 'dark' : 'light');
+    };
+
+    var togglePhotocopyMode = function() {
+        var isPhoto = document.body.classList.toggle('photocopy-mode');
+        var label = document.getElementById('mode-toggle-label');
+        if (label) label.textContent = isPhoto ? 'B&W' : 'Color';
+    };
+
+    var setMobileView = function(view) {
+        var container = document.getElementById('main-container');
+        if (container) container.className = 'mobile-view-' + view;
+        document.querySelectorAll('.mobile-nav-btn').forEach(function(btn) { btn.classList.remove('active'); });
+        var activeBtn = document.getElementById('mob-btn-' + view);
+        if (activeBtn) activeBtn.classList.add('active');
+    };
+
+    var switchPreviewTab = function(tab) {
+        var docContainer = document.getElementById('document-view-container');
+        var pdfContainer = document.getElementById('pdf-view-container');
+        var editorBtn = document.getElementById('tab-editor-btn');
+        var pdfBtn = document.getElementById('tab-pdf-btn');
+
+        if (tab === 'editor') {
+            if (docContainer) docContainer.style.display = 'flex';
+            if (pdfContainer) pdfContainer.style.display = 'none';
+            if (editorBtn) editorBtn.classList.add('active');
+            if (pdfBtn) pdfBtn.classList.remove('active');
+        } else {
+            if (docContainer) docContainer.style.display = 'none';
+            if (pdfContainer) pdfContainer.style.display = 'flex';
+            if (pdfBtn) pdfBtn.classList.add('active');
+            if (editorBtn) editorBtn.classList.remove('active');
+        }
+    };
+    
+    var switchPreviewTabDesktop = switchPreviewTab;
+
+    var executeEditorCommand = function(command, value) {
+        document.execCommand(command, false, value);
+        var activePage = document.querySelector('.doc-page-canvas');
+        if (activePage) activePage.focus();
+    };
+
+    var openAIModelsModal = function() {
+        var modal = document.getElementById('ai-models-modal');
+        if (modal) modal.style.display = 'flex';
+    };
+    
+    var closeAIModelsModal = function() {
+        var modal = document.getElementById('ai-models-modal');
+        if (modal) modal.style.display = 'none';
+    };
+    
+    var toggleAtCommandMenu = function() {
+        var menu = document.getElementById('at-command-menu');
+        var backdrop = document.getElementById('at-command-menu-backdrop');
+        if (menu) {
+            var isOpen = menu.classList.toggle('open');
+            if (backdrop) backdrop.classList.toggle('open', isOpen);
+        }
+    };
+    
+    var closeAtCommandMenu = function() {
+        var menu = document.getElementById('at-command-menu');
+        var backdrop = document.getElementById('at-command-menu-backdrop');
+        if (menu) menu.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('open');
+    };
+  </script>
+  <!-- =================================================== -->
+
   <!-- Modern UI fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -108,7 +200,6 @@
     <button class="topbar-fab-btn" id="topbar-new-fab-btn" onclick="startNewProject()" aria-label="Start new document" title="New document">+</button>
     <button class="topbar-btn" id="topbar-more-btn" type="button" aria-label="More options" aria-haspopup="menu" aria-expanded="false">⋮</button>
 
-    <!-- ARIA issue fixed here: aria-hidden="true" removed -->
     <div id="topbar-actions" role="menu">
       <label class="topbar-toggle-label" title="Show document analytics summary after generation">
         <input type="checkbox" id="analytics-toggle" checked>Show Analytics
@@ -399,97 +490,7 @@
     </div>
   </div>
 
-  <!-- ===== MISSING FUNCTIONS & UI FALLBACK FIX (STANDARD GLOBAL FUNCTIONS) ===== -->
   <script>
-    // ১. math-renderer.js এর এরর ফিক্স (Standard Function)
-    function findBrokenDiagrams(container) {
-        console.warn("findBrokenDiagrams fallback executed.");
-        return []; 
-    }
-
-    // ২. document-editor.js এর এরর ফিক্স (Standard Function)
-    function applyPDFVisualFormat(formatName) {
-        console.warn("applyPDFVisualFormat fallback executed: " + formatName);
-        const canvases = document.querySelectorAll('.doc-page-canvas');
-        canvases.forEach(canvas => {
-            canvas.className = canvas.className.replace(/pdf-format-\w+/g, '').replace(/text-format-\w+/g, '');
-            if (formatName && formatName !== 'none' && formatName !== 'default') {
-                canvas.classList.add(formatName.includes('format-') ? formatName : 'pdf-format-' + formatName);
-            }
-        });
-    }
-    
-    // ৩. গ্লোবাল UI ফাংশন (Standard Function Declarations)
-    function toggleDarkMode() {
-        const isDark = document.documentElement.classList.toggle('dark');
-        localStorage.setItem('studio_theme', isDark ? 'dark' : 'light');
-    }
-
-    function togglePhotocopyMode() {
-        const isPhoto = document.body.classList.toggle('photocopy-mode');
-        const label = document.getElementById('mode-toggle-label');
-        if (label) label.textContent = isPhoto ? 'B&W' : 'Color';
-    }
-
-    function setMobileView(view) {
-        const container = document.getElementById('main-container');
-        if (container) container.className = 'mobile-view-' + view;
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        const activeBtn = document.getElementById('mob-btn-' + view);
-        if (activeBtn) activeBtn.classList.add('active');
-    }
-
-    function switchPreviewTab(tab) {
-        const docContainer = document.getElementById('document-view-container');
-        const pdfContainer = document.getElementById('pdf-view-container');
-        const editorBtn = document.getElementById('tab-editor-btn');
-        const pdfBtn = document.getElementById('tab-pdf-btn');
-
-        if (tab === 'editor') {
-            if (docContainer) docContainer.style.display = 'flex';
-            if (pdfContainer) pdfContainer.style.display = 'none';
-            if (editorBtn) editorBtn.classList.add('active');
-            if (pdfBtn) pdfBtn.classList.remove('active');
-        } else {
-            if (docContainer) docContainer.style.display = 'none';
-            if (pdfContainer) pdfContainer.style.display = 'flex';
-            if (pdfBtn) pdfBtn.classList.add('active');
-            if (editorBtn) editorBtn.classList.remove('active');
-        }
-    }
-    
-    function switchPreviewTabDesktop(tab) { switchPreviewTab(tab); }
-
-    function executeEditorCommand(command, value = null) {
-        document.execCommand(command, false, value);
-        const activePage = document.querySelector('.doc-page-canvas');
-        if (activePage) activePage.focus();
-    }
-
-    function openAIModelsModal() {
-        const modal = document.getElementById('ai-models-modal');
-        if (modal) modal.style.display = 'flex';
-    }
-    function closeAIModelsModal() {
-        const modal = document.getElementById('ai-models-modal');
-        if (modal) modal.style.display = 'none';
-    }
-    function toggleAtCommandMenu() {
-        const menu = document.getElementById('at-command-menu');
-        const backdrop = document.getElementById('at-command-menu-backdrop');
-        if (menu) {
-            const isOpen = menu.classList.toggle('open');
-            if (backdrop) backdrop.classList.toggle('open', isOpen);
-        }
-    }
-    function closeAtCommandMenu() {
-        const menu = document.getElementById('at-command-menu');
-        const backdrop = document.getElementById('at-command-menu-backdrop');
-        if (menu) menu.classList.remove('open');
-        if (backdrop) backdrop.classList.remove('open');
-    }
-    
-    // Mobile 3-dot menu toggle event listener fallback
     document.addEventListener('DOMContentLoaded', () => {
         const moreBtn = document.getElementById('topbar-more-btn');
         const actionsMenu = document.getElementById('topbar-actions');
@@ -507,7 +508,7 @@
     });
   </script>
 
-  <!-- ===== JAVASCRIPT MODULES (সঠিক ক্রমে লোড) ===== -->
+  <!-- ===== JAVASCRIPT MODULES ===== -->
 
   <!-- 1. Configuration -->
   <script src="js/config.js"></script>
@@ -542,7 +543,7 @@
   <!-- 11. Main App (initialization) -->
   <script src="js/app.js"></script>
 
-  <!-- ===== MOBILE VIEWPORT SYNC (inline for immediate effect) ===== -->
+  <!-- ===== MOBILE VIEWPORT SYNC ===== -->
   <script>
     (function installMobileViewportSync() {
       function sync() {
