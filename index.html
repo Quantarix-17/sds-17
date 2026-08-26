@@ -462,5 +462,99 @@
       window.__resyncMobileViewportHeight = sync;
     })();
   </script>
+  <!-- Core UI Actions Fix -->
+<script>
+  // ১. ডার্ক মোড টগল
+  function toggleDarkMode() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('studio_theme', isDark ? 'dark' : 'light');
+    const icon = document.getElementById('theme-toggle-icon');
+    if (icon) icon.innerHTML = isDark ? '☀️' : '🌙';
+  }
+
+  // ২. কালার / ফটোকপি (Monochrome) মোড টগল
+  function togglePhotocopyMode() {
+    const isMono = document.body.classList.toggle('photocopy-mode');
+    const label = document.getElementById('mode-toggle-label');
+    if (label) label.textContent = isMono ? 'B&W' : 'Color';
+  }
+
+  // ৩. টেক্সট এডিটর কমান্ড (Bold, Italic, Font, Alignment etc.)
+  function executeEditorCommand(command, value = null) {
+    document.execCommand(command, false, value);
+    const activePage = document.querySelector('.doc-page-canvas');
+    if (activePage) activePage.focus();
+  }
+
+  // ৪. মোবাইল ৩-ডট (⋮) অ্যাকশন মেনু টগল
+  const moreBtn = document.getElementById('topbar-more-btn');
+  const actionsMenu = document.getElementById('topbar-actions');
+  if (moreBtn && actionsMenu) {
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      actionsMenu.classList.toggle('open');
+      moreBtn.classList.toggle('active');
+    });
+    document.addEventListener('click', () => {
+      actionsMenu.classList.remove('open');
+      moreBtn.classList.remove('active');
+    });
+  }
+
+  // ৫. মোডাল ওপেন ও ক্লোজ
+  function openAIModelsModal() {
+    const modal = document.getElementById('ai-models-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+  function closeAIModelsModal() {
+    const modal = document.getElementById('ai-models-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // ৬. মোবাইল ভিউ সুইচ (Chat / Editor / PDF)
+  function setMobileView(view) {
+    const container = document.getElementById('main-container');
+    if (!container) return;
+    container.className = 'mobile-view-' + view;
+    document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById('mob-btn-' + view);
+    if (activeBtn) activeBtn.classList.add('active');
+  }
+
+  // ৭. প্রিভিউ ট্যাব সুইচ (Editor / PDF Viewer)
+  function switchPreviewTab(tab) {
+    const docContainer = document.getElementById('document-view-container');
+    const pdfContainer = document.getElementById('pdf-view-container');
+    const editorBtn = document.getElementById('tab-editor-btn');
+    const pdfBtn = document.getElementById('tab-pdf-btn');
+
+    if (tab === 'editor') {
+      if (docContainer) docContainer.style.display = 'flex';
+      if (pdfContainer) pdfContainer.style.display = 'none';
+      if (editorBtn) editorBtn.classList.add('active');
+      if (pdfBtn) pdfBtn.classList.remove('active');
+    } else {
+      if (docContainer) docContainer.style.display = 'none';
+      if (pdfContainer) pdfContainer.style.display = 'flex';
+      if (pdfBtn) pdfBtn.classList.add('active');
+      if (editorBtn) editorBtn.classList.remove('active');
+    }
+  }
+
+  // ৮. @ কমান্ড মেনু টগল
+  function toggleAtCommandMenu() {
+    const menu = document.getElementById('at-command-menu');
+    const backdrop = document.getElementById('at-command-menu-backdrop');
+    if (!menu) return;
+    const isOpen = menu.classList.toggle('open');
+    if (backdrop) backdrop.classList.toggle('open', isOpen);
+  }
+  function closeAtCommandMenu() {
+    const menu = document.getElementById('at-command-menu');
+    const backdrop = document.getElementById('at-command-menu-backdrop');
+    if (menu) menu.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('open');
+  }
+</script>
 </body>
 </html>
