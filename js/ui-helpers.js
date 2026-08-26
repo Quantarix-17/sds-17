@@ -620,4 +620,28 @@ function resetCancellationState() {
 async function waitWhilePaused() {
   // No-op - kept for compatibility
   return;
+  // ============================================================
+// WINDOW EXPOSURE – UI Helpers
+// ============================================================
+window.toggleDarkMode = toggleDarkMode;
+window.applyCurrentTheme = applyCurrentTheme;
+window.displayToastNotification = displayToastNotification;
+window.autoResizeTextarea = autoResizeTextarea;
+window.initializeSidebarResize = initializeSidebarResize;
+window.openEditPageModal = openEditPageModal;
+window.closeEditPageModal = closeEditPageModal;
+window.confirmEditPages = confirmEditPages;
+window.promptForPageRange = promptForPageRange;
+window.closePageRangeModal = closePageRangeModal;
+window.confirmPageRange = confirmPageRange;
+window.switchPreviewTabDesktop = switchPreviewTabDesktop;
+window.setMobileView = setMobileView;
+window.requestCancelProcessing = requestCancelProcessing;
+window.resetCancellationState = resetCancellationState;
+window.waitWhilePaused = waitWhilePaused;
+window.bindTopbarMoreMenu = bindTopbarMoreMenu;
+window.toggleTopbarMenu = toggleTopbarMenu;
+window.closeTopbarMenu = closeTopbarMenu;
+window.togglePhotocopyMode = togglePhotocopyMode;
+window.updateModeButtonText = updateModeButtonText;
 }
