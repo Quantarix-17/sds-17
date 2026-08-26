@@ -1054,4 +1054,13 @@ function getConfidenceBadge(confidence) {
   if (confidence >= 75) return '<span class="ocr-confidence-badge ocr-conf-high">High </span>';
   if (confidence >= 45) return '<span class="ocr-confidence-badge ocr-conf-med">Medium ~</span>';
   return '<span class="ocr-confidence-badge ocr-conf-low">Low Warning</span>';
+  // ============================================================
+// WINDOW EXPOSURE – OCR
+// ============================================================
+window.handleFileUploads = handleFileUploads;
+window.handleSidebarFileDrop = handleSidebarFileDrop;
+window.renderAttachmentBar = renderAttachmentBar;
+window.runOcrOnImageFile = runOcrOnImageFile;
+window.extractTextFromPDFWithOCRFallback = extractTextFromPDFWithOCRFallback;
+window.terminateOcrWorkersForCancellation = terminateOcrWorkersForCancellation;
 }
