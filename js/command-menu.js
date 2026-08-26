@@ -937,4 +937,37 @@ function buildAtCommandInstructionText(intentPayload) {
   }
 
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
+// ============================================================
+// WINDOW EXPOSURE – Command Menu
+// ============================================================
+window.toggleAtCommandMenu = toggleAtCommandMenu;
+window.closeAtCommandMenu = closeAtCommandMenu;
+window.renderAtCommandMenuList = renderAtCommandMenuList;
+window.chooseAtCommandFromMenu = chooseAtCommandFromMenu;
+window.filterAtCommandMenu = filterAtCommandMenu;
+window.moveAtCommandHighlight = moveAtCommandHighlight;
+window.chooseHighlightedAtCommand = chooseHighlightedAtCommand;
+window.parseAndStripInlineCommandTokens = parseAndStripInlineCommandTokens;
+window.buildIntentPayload = buildIntentPayload;
+window.buildAtCommandInstructionText = buildAtCommandInstructionText;
+window.renderSelectedCommandChips = renderSelectedCommandChips;
+window.attemptAddAtCommand = attemptAddAtCommand;
+window.removeSelectedAtCommand = removeSelectedAtCommand;
+window.getAtCommandDisabledReason = getAtCommandDisabledReason;
+window.isAtCommandDisabled = isAtCommandDisabled;
+window.handleChatInputChanged = handleChatInputChanged;
+window.showAtCommandToast = showAtCommandToast;
+window.shakeChatInputField = shakeChatInputField;
+window.pruneDependentAtCommandSelections = pruneDependentAtCommandSelections;
+window.normalizeAtCommandSelection = normalizeAtCommandSelection;
+window.ensureCommandDependencies = ensureCommandDependencies;
+window.getCommandAutoParent = getCommandAutoParent;
+window.hasSelectedCommand = hasSelectedCommand;
+window.hasDocumentContentForAtCommands = hasDocumentContentForAtCommands;
+window.getPrimaryIntent = getPrimaryIntent;
+window.isDocumentOperationIntent = isDocumentOperationIntent;
+window.getAtCommandById = getAtCommandById;
+window.getCommandsForCategory = getCommandsForCategory;
+window.setAtCommandCategory = setAtCommandCategory;
+window.getCommandCategoryKey = getCommandCategoryKey;
 }
