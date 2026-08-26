@@ -1471,4 +1471,40 @@ function applyMonochromeDocumentStyles() {
   });
 
   if (typeof enforceDiagramVisualStyles === 'function') enforceDiagramVisualStyles(docContainer);
+// ============================================================
+// WINDOW EXPOSURE – Document Editor
+// ============================================================
+window.switchPreviewTab = switchPreviewTab;
+window.executeEditorCommand = executeEditorCommand;
+window.paginateDocumentCanvas = paginateDocumentCanvas;
+window.beautifyDocument = beautifyDocument;
+window.addPageAfterCurrent = addPageAfterCurrent;
+window.removeCurrentPage = removeCurrentPage;
+window.handleCanvasInput = handleCanvasInput;
+window.handlePageKeydown = handlePageKeydown;
+window.setDocumentHTMLAndPaginate = setDocumentHTMLAndPaginate;
+window.getAllCanvasHTML = getAllCanvasHTML;
+window.getCanvasContentWithLatexSource = getCanvasContentWithLatexSource;
+window.updateSpecificPageByNumber = updateSpecificPageByNumber;
+window.updateSpecificPagesByNumber = updateSpecificPagesByNumber;
+window.updateSpecificSectionByHeading = updateSpecificSectionByHeading;
+window.checkForDuplicateHeadings = checkForDuplicateHeadings;
+window.fitEditorPagesToScreen = fitEditorPagesToScreen;
+window.runDocumentOutputIntegrityPass = runDocumentOutputIntegrityPass;
+window.isDiagramEditRequest = isDiagramEditRequest;
+window.handleDiagramEditOrRefine = handleDiagramEditOrRefine;
+window.finalizeExamDocumentIfNeeded = finalizeExamDocumentIfNeeded;
+window.scheduleReflow = scheduleReflow;
+window.applyPDFVisualFormat = applyPDFVisualFormat;
+window.applyPDFTextFormat = applyPDFTextFormat;
+window.getActivePDFVisualFormat = getActivePDFVisualFormat;
+window.getActivePDFTextFormat = getActivePDFTextFormat;
+window.choosePDFVisualFormat = choosePDFVisualFormat;
+window.choosePDFTextFormat = choosePDFTextFormat;
+window.applyMonochromeDocumentStyles = applyMonochromeDocumentStyles;
+window.repairEquationsInNewContent = repairEquationsInNewContent;
+window.getExistingHeadings = getExistingHeadings;
+window.getPageRangeContext = getPageRangeContext;
+window.getMultiPageEditContext = getMultiPageEditContext;
+window.detectRequestedPageNumber = detectRequestedPageNumber;
 }
