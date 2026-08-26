@@ -2547,4 +2547,43 @@ function handleChatKeyPress(event) {
     event.stopPropagation();
     if (typeof triggerChatSend === 'function') triggerChatSend();
   }
+  // ============================================================
+// WINDOW EXPOSURE – Main App
+// ============================================================
+window.handleChatFormSubmit = handleChatFormSubmit;
+window.triggerChatSend = triggerChatSend;
+window.sendChatPromptToAI = sendChatPromptToAI;
+window.handleChatKeyPress = handleChatKeyPress;
+window.appendChatMessageToUI = appendChatMessageToUI;
+window.convertTextToDocumentHTML = convertTextToDocumentHTML;
+window.getActiveTabIdSafe = getActiveTabIdSafe;
+window.getActiveTabStateSafe = getActiveTabStateSafe;
+window.commitRuntimeStateSafe = commitRuntimeStateSafe;
+// window.getSectionModeEnabled = getSectionModeEnabled; // already exposed
+window.buildAttachmentContextForAI = buildAttachmentContextForAI;
+window.detectOutputLanguage = detectOutputLanguage;
+window.getDirectAIAttachmentFiles = getDirectAIAttachmentFiles;
+window.readFileAsDataUrlForAI = readFileAsDataUrlForAI;
+window.buildDirectAIAttachmentParts = buildDirectAIAttachmentParts;
+window.buildAIUserContent = buildAIUserContent;
+window.isFileReferencedRequest = isFileReferencedRequest;
+window.cleanAttachmentSourceForAI = cleanAttachmentSourceForAI;
+window.sanitizeHTML = sanitizeHTML;
+window.isSafeHTMLUrl = isSafeHTMLUrl;
+window.sanitizeAttributeUrl = sanitizeAttributeUrl;
+window.safeParseAIJson = safeParseAIJson;
+window.attemptRepairAndParse = attemptRepairAndParse;
+window.normalizeAIContent = normalizeAIContent;
+window.callAIAPI = callAIAPI;
+window.buildSharedRules = buildSharedRules;
+window.generateTopicPlan = generateTopicPlan;
+window.generateNextSection = generateNextSection;
+window.generateSectionBatch = generateSectionBatch;
+window.generateComprehensiveDocumentStepByStep = generateComprehensiveDocumentStepByStep;
+window.generateDefaultPDFDirectMode = generateDefaultPDFDirectMode;
+window.generateExplicitLengthPDFDirectMode = generateExplicitLengthPDFDirectMode;
+window.generateLongPDFDirectMode = generateLongPDFDirectMode;
+window.computeDocumentAnalytics = computeDocumentAnalytics;
+window.formatAnalyticsChatMessage = formatAnalyticsChatMessage;
+window.validateAIActionHandlers = validateAIActionHandlers;
 }
