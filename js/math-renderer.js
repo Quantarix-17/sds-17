@@ -325,3 +325,20 @@ function getCanvasContentWithLatexSource() {
   });
   return convertKatexSpansToLatexSource(combinedHTML);
 }
+// ============================================================
+// WINDOW EXPOSURE – Math Renderer
+// ============================================================
+window.processMathEquationsInContainer = processMathEquationsInContainer;
+window.renderAllKatexVisuals = renderAllKatexVisuals;
+window.forceRenderAllEquations = forceRenderAllEquations;
+window.processMathEquationsToHTML = processMathEquationsToHTML;
+window.convertKatexSpansToLatexSource = convertKatexSpansToLatexSource;
+window.shrinkOverflowingKatexEquations = shrinkOverflowingKatexEquations;
+window.prepareEquationsForPDF = prepareEquationsForPDF;
+window.normalizeAIHTMLTextArtifacts = normalizeAIHTMLTextArtifacts;
+window.findBrokenEquations = findBrokenEquations;
+window.findBrokenDiagrams = findBrokenDiagrams;
+window.enforceDiagramVisualStyles = enforceDiagramVisualStyles;
+window.cleanupEmptyVisualContainers = cleanupEmptyVisualContainers;
+window.ensureAllPagesMathRendered = ensureAllPagesMathRendered;
+window.repairVisibleEscapeSequencesInText = repairVisibleEscapeSequencesInText;
