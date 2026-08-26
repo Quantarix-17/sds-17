@@ -27,9 +27,8 @@
   <!-- Main Styles -->
   <link rel="stylesheet" href="css/styles.css">
 
-  <!-- Additional style overrides -->
+  <!-- Critical inline styles -->
   <style>
-    /* Keep critical inline styles that must load immediately */
     .visually-hidden-input {
       position: absolute;
       width: 1px;
@@ -42,6 +41,45 @@
       border: 0;
     }
     #pdf-print-stage { display: none; }
+
+    /* Small override for mobile/desktop */
+    .topbar-btn.btn-exporting {
+      cursor: default;
+      opacity: 0.88;
+      pointer-events: none;
+    }
+    .btn-spinner {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-top-color: #fff;
+      animation: btn-spin 0.65s linear infinite;
+    }
+    @keyframes btn-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+
+  <!-- Include any additional style overrides -->
+  <style id="pdf-viewer-full-width-fix">
+    #pdf-view-container {
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    @media (max-width: 850px) {
+      #pdf-view-container {
+        padding-top: 6px !important;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 10px)) !important;
+      }
+    }
+    @media (min-width: 851px) {
+      #pdf-view-container {
+        padding-top: 14px !important;
+        padding-bottom: 14px !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -360,8 +398,7 @@
     </div>
   </div>
 
-  <!-- ============ JAVASCRIPT MODULES ============ -->
-  <!-- Load order matters: config → constants → helpers → managers → core → app -->
+  <!-- ===== JAVASCRIPT MODULES (সঠিক ক্রমে লোড) ===== -->
 
   <!-- 1. Configuration -->
   <script src="js/config.js"></script>
@@ -396,5 +433,34 @@
   <!-- 11. Main App (initialization) -->
   <script src="js/app.js"></script>
 
+  <!-- ===== MOBILE VIEWPORT SYNC (inline for immediate effect) ===== -->
+  <script>
+    (function installMobileViewportSync() {
+      function sync() {
+        try {
+          if (!window.visualViewport || !(typeof isMobileDeviceLayout === 'function' ? isMobileDeviceLayout() : false)) return;
+          const vv = window.visualViewport;
+          const height = Math.max(320, Math.round(vv.height || window.innerHeight || 0));
+          document.documentElement.style.setProperty('--mobile-vh', height + 'px');
+        } catch (_) {}
+      }
+      sync();
+      window.addEventListener('resize', sync, { passive: true });
+      window.addEventListener('orientationchange', function() { setTimeout(sync, 120); }, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', sync, { passive: true });
+        window.visualViewport.addEventListener('scroll', sync, { passive: true });
+      }
+      document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) { sync();
+          setTimeout(sync, 250); }
+      }, { passive: true });
+      window.addEventListener('pageshow', function() { sync();
+        setTimeout(sync, 250); }, { passive: true });
+      window.addEventListener('focus', function() { sync();
+        setTimeout(sync, 250); }, { passive: true });
+      window.__resyncMobileViewportHeight = sync;
+    })();
+  </script>
 </body>
 </html>
