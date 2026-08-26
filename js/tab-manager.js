@@ -627,4 +627,11 @@ function startNewProject() {
 window.saveStateToLocalStorage = function() {
   // Legacy compatibility shim - TAB_MANAGER is the single persistence owner
   return true;
-};
+};// ============================================================
+// WINDOW EXPOSURE – Tab Manager
+// ============================================================
+window.TAB_MANAGER = TAB_MANAGER;
+window.startNewProject = startNewProject;
+window.saveProjectFile = saveProjectFile;
+window.loadProjectFromFile = loadProjectFromFile;
+// TAB_MANAGER এর মেথডগুলো ইতিমধ্যেই window.TAB_MANAGER এর মাধ্যমে অ্যাক্সেসযোগ্য
