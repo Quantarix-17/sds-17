@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <title>AI PDF & Word Studio - Multi‑Tab Pro • Full Unified PDF Engine</title>
+
+  <!-- Modern UI fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Mammoth.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <!-- Tesseract.js -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+  <!-- html2canvas & jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Main Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Additional style overrides -->
+  <style>
+    /* Keep critical inline styles that must load immediately */
+    .visually-hidden-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    #pdf-print-stage { display: none; }
+  </style>
+</head>
+<body>
+  <div id="pdf-print-stage" aria-hidden="true"></div>
+
+  <!-- TOP NAV -->
+  <div id="topbar">
+    <div class="logo">
+      <span class="logo-mark ui-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5 14 9l5.5 2-5.5 2-2 5.5-2-5.5-5.5-2 5.5-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      </span>
+      AI Word<span>&nbsp; PDF Studio</span>
+      <div id="chat-model-bar">
+        <span id="chat-model-bar-icon" class="ui-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 12h8M12 8v8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </span>
+        <select id="active-model-select" onchange="setActiveAIModel(this.value)">
+          <option value="">⚠️ No model added</option>
+        </select>
+      </div>
+    </div>
+    <div class="spacer"></div>
+
+    <!-- Mobile: Close All Tabs FAB -->
+    <button class="topbar-fab-btn" id="topbar-newtab-fab-btn" onclick="TAB_MANAGER.closeAllTabsWithConfirm()" aria-label="Close all tabs" title="Close all tabs">⊠</button>
+    <button class="topbar-fab-btn" id="topbar-new-fab-btn" onclick="startNewProject()" aria-label="Start new document" title="New document">+</button>
+    <button class="topbar-btn" id="topbar-more-btn" type="button" aria-label="More options" aria-haspopup="menu" aria-expanded="false">⋮</button>
+
+    <div id="topbar-actions" role="menu" aria-hidden="true">
+      <label class="topbar-toggle-label" title="Show document analytics summary after generation">
+        <input type="checkbox" id="analytics-toggle" checked>Show Analytics
+      </label>
+      <button class="mode-toggle-btn" id="mode-toggle-btn" type="button" onclick="togglePhotocopyMode()" aria-label="Toggle monochrome color mode" title="Toggle Color / Monochrome">
+        <span id="mode-toggle-icon" class="ui-icon" aria-hidden="true"></span>
+        <span id="mode-toggle-label" class="mode-label">Color</span>
+      </button>
+      <button class="topbar-btn" onclick="openAIModelsModal()">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H11l-4.5 4v-4.6A2.5 2.5 0 0 1 4 12.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>AI Models
+      </button>
+      <button class="topbar-btn" onclick="startNewProject()">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l3 3V20H6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 3.5V7H18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span>New
+      </button>
+      <button class="topbar-btn" id="desktop-close-all-tabs-btn" onclick="TAB_MANAGER.closeAllTabsWithConfirm()" title="Close all open tabs" aria-label="Close all open tabs">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></span>Close Tabs
+      </button>
+      <button class="topbar-btn" onclick="saveProjectFile()">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 4v5h8V4M8 16h8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span>Save
+      </button>
+      <button class="topbar-btn" onclick="document.getElementById('project-load-input').click()">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h6l2 2h8v9a2 2 0 0 1-2 2H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>Load
+      </button>
+      <button class="topbar-btn btn-primary" onclick="exportToWordDocument()">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l3 3V20H6z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M14.5 3.5V7H18" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>Word
+      </button>
+      <button class="topbar-btn btn-accent" onclick="exportToHighQualityPDF(this)">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l3 3V20H6z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M14.5 3.5V7H18M8 16h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>PDF
+      </button>
+      <button class="topbar-btn" onclick="exportToImagePDF(this)">
+        <span class="ui-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m6.5 17 4-4 2.5 2.5 2-2 2.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>Img PDF
+      </button>
+      <button class="topbar-btn" id="theme-toggle-btn" onclick="toggleDarkMode()">
+        <span id="theme-toggle-icon" class="ui-icon" aria-hidden="true"></span>Theme
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB BAR -->
+  <div id="tab-bar"></div>
+
+  <!-- MOBILE NAV -->
+  <div id="mobile-nav-bar">
+    <button class="mobile-nav-btn active" id="mob-btn-chat" onclick="setMobileView('chat')">AI Chat</button>
+    <button class="mobile-nav-btn" id="mob-btn-editor" onclick="setMobileView('editor')">Editor</button>
+    <button class="mobile-nav-btn" id="mob-btn-pdf" onclick="setMobileView('pdf')">PDF</button>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main-container" class="mobile-view-chat">
+
+    <!-- SIDEBAR -->
+    <div id="sidebar" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="handleSidebarFileDrop(event)">
+      <div id="chat-history"></div>
+      <div id="attachment-bar"></div>
+      <div id="at-command-chips"></div>
+      <div id="at-command-menu-backdrop" onclick="closeAtCommandMenu()"></div>
+      <div id="at-command-menu" role="listbox" aria-label="Select AI intent command">
+        <button id="at-command-menu-close" onclick="closeAtCommandMenu()" aria-label="Close menu"></button>
+      </div>
+      <form id="chat-form" action="javascript:void(0);" onsubmit="handleChatFormSubmit(event)" novalidate>
+        <label class="icon-btn" for="file-upload-input" id="file-attach-btn" title="Attach files" aria-label="Attach files">
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6.5 3.5h8l3 3V20H6.5z"/>
+            <path d="M14 3.5V7h3.5M9 11h5.5M9 14.5h5.5M9 18h3.5"/>
+          </svg>
+        </label>
+        <button type="button" class="icon-btn" id="at-command-btn" title="Select intent" aria-label="Select intent" onclick="toggleAtCommandMenu()">@</button>
+        <textarea id="chat-input-textarea" rows="1" placeholder="Ask AI to create..." oninput="handleChatInputChanged(this, event)" onkeydown="handleChatKeyPress(event)"></textarea>
+        <button type="submit" class="icon-btn primary" id="send-message-btn" title="Send message">↑</button>
+      </form>
+    </div>
+
+    <!-- RESIZE HANDLE -->
+    <div id="resize-handle" onmousedown="initializeSidebarResize(event)"></div>
+
+    <!-- PREVIEW PANEL -->
+    <div id="preview-panel">
+      <div id="preview-tabs-desktop">
+        <button class="tab-btn active" id="tab-editor-btn-desktop" onclick="switchPreviewTabDesktop('editor')">Editor</button>
+        <button class="tab-btn" id="tab-pdf-btn-desktop" onclick="switchPreviewTabDesktop('pdf')">PDF Viewer</button>
+      </div>
+      <div id="preview-tabs">
+        <button class="tab-btn active" id="tab-editor-btn" onclick="switchPreviewTab('editor')">Editor</button>
+        <button class="tab-btn" id="tab-pdf-btn" onclick="switchPreviewTab('pdf')">PDF Viewer</button>
+      </div>
+
+      <div id="editor-toolbar">
+        <div class="tool-group">
+          <button class="tool-btn" onclick="HISTORY.undo()" title="Undo">↩</button>
+          <button class="tool-btn" onclick="HISTORY.redo()" title="Redo">↪</button>
+          <button class="tool-btn" onclick="executeEditorCommand('removeFormat')">✕</button>
+          <button class="tool-btn" onclick="paginateDocumentCanvas()">Paginate</button>
+          <button class="tool-btn" onclick="beautifyDocument()">
+            <span class="ui-icon"><svg viewBox="0 0 24 24"><path d="m12 3 1.2 4.1L17 8.5l-3.8 1.4L12 14l-1.2-4.1L7 8.5l3.8-1.4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span> Beautify
+          </button>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" onclick="addPageAfterCurrent()">Add Page</button>
+          <button class="tool-btn" onclick="removeCurrentPage()">Remove Page</button>
+        </div>
+        <div class="tool-group">
+          <select class="tool-select" onchange="executeEditorCommand('fontName', this.value)">
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Arial">Arial</option>
+            <option value="Courier New">Courier</option>
+            <option value="Georgia">Georgia</option>
+          </select>
+          <select class="tool-select" onchange="executeEditorCommand('fontSize', this.value)">
+            <option value="3">Normal</option>
+            <option value="1">Small</option>
+            <option value="4">Large</option>
+            <option value="5">Heading 2</option>
+            <option value="6">Heading 1</option>
+          </select>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" id="btn-bold" onclick="executeEditorCommand('bold')"><b>B</b></button>
+          <button class="tool-btn" id="btn-italic" onclick="executeEditorCommand('italic')"><i>I</i></button>
+          <button class="tool-btn" id="btn-underline" onclick="executeEditorCommand('underline')"><u>U</u></button>
+          <div class="color-btn-container" title="Text Color"><span>A</span><input type="color" onchange="executeEditorCommand('foreColor', this.value)"></div>
+          <div class="color-btn-container" title="Highlight Color" style="background:#fef08a;"><span></span><input type="color" value="#ffff00" onchange="executeEditorCommand('hiliteColor', this.value)"></div>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" id="btn-justifyLeft" onclick="executeEditorCommand('justifyLeft')">⫷</button>
+          <button class="tool-btn" id="btn-justifyCenter" onclick="executeEditorCommand('justifyCenter')">≡</button>
+          <button class="tool-btn" id="btn-justifyRight" onclick="executeEditorCommand('justifyRight')">⫸</button>
+          <button class="tool-btn" id="btn-justifyFull" onclick="executeEditorCommand('justifyFull')">▤</button>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" onclick="executeEditorCommand('insertUnorderedList')">• List</button>
+          <button class="tool-btn" onclick="executeEditorCommand('insertOrderedList')">1. List</button>
+        </div>
+      </div>
+
+      <div id="preview-content-area">
+        <div id="document-view-container">
+          <div class="doc-page-canvas" contenteditable="true" spellcheck="false" oninput="handleCanvasInput(event)" onkeydown="handlePageKeydown(event)">
+            <h1 style="text-align: center; margin-top: 30%; color: #9ca3af; font-family: 'Inter', sans-serif; font-weight:400;">Start typing here...<br>
+              <span style="font-size: 14pt;">Or ask AI on the left to generate notes, MCQ Quizzes, or charts!</span>
+            </h1>
+            <div class="page-footer-number" contenteditable="false">Page 1 of 1</div>
+          </div>
+        </div>
+        <div id="pdf-view-container">
+          <div id="pdf-preview-loading" class="pdf-preview-loading" aria-live="polite" aria-busy="true">
+            <div class="pdf-preview-loading-card">
+              <div class="pdf-preview-spinner"></div>
+              <div class="pdf-preview-loading-title">Preparing PDF Preview</div>
+              <div id="pdf-preview-loading-status" class="pdf-preview-loading-status">Building page layout and rendering equations…</div>
+            </div>
+          </div>
+          <iframe id="pdf-iframe" title="PDF Live Preview" loading="eager"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAYS & INPUTS -->
+  <div id="global-progress-overlay">
+    <div class="progress-card">
+      <div class="spinner-loader"></div>
+      <h3 id="progress-overlay-title" style="color:var(--text-primary); font-size:1rem;">Working...</h3>
+      <p id="progress-overlay-subtitle" style="color:var(--text-secondary); margin-top:4px; font-size:0.82rem;"></p>
+      <div id="progress-model-badge" style="font-size:0.8rem; color:var(--text-secondary); margin-top:4px;"></div>
+      <div id="progress-scope" style="font-size:0.82rem; font-weight:700; color:var(--text-secondary); margin-top:6px; width:100%; text-align:center; line-height:1.3; min-height:1.15em; white-space:normal; overflow-wrap:anywhere;"></div>
+      <div id="progress-steps" class="progress-steps" aria-hidden="true">
+        <span data-step="1">AI</span><i></i><span data-step="2">Process</span><i></i><span data-step="3">Render</span><i></i><span data-step="4">Finish</span>
+      </div>
+      <div id="progress-live-preview"></div>
+      <div class="progress-bar-track"><div id="progress-bar-fill" class="progress-bar-fill"></div></div>
+      <div class="progress-meta-row">
+        <span id="progress-bar-percent">0%</span>
+        <span id="progress-bar-time"></span>
+      </div>
+      <div class="progress-action-row">
+        <button class="cancel-btn" id="cancel-processing-btn" onclick="requestCancelProcessing()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-notification">Notification</div>
+
+  <input type="file" id="file-upload-input" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg,.webp,.bmp" multiple onchange="handleFileUploads(this.files)" class="visually-hidden-input">
+  <input type="file" id="project-load-input" accept=".aipdf" onchange="loadProjectFromFile(this.files)" style="display:none;">
+
+  <!-- PAGE RANGE MODAL -->
+  <div id="page-range-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); z-index:10000; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+    <div style="background:var(--surface-color); padding:24px; border-radius:var(--radius-lg); max-width:400px; width:100%; box-shadow:var(--shadow-lg); box-sizing:border-box;">
+      <h3 style="margin-bottom:12px;">Select Page Range</h3>
+      <p style="margin-bottom:12px; color:var(--text-secondary);">Enter start and end page numbers (1‑based).</p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <input type="number" id="range-start" min="1" value="1" style="flex:1 1 0; min-width:0; width:100%; max-width:100%; padding:8px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-primary); box-sizing:border-box;">
+        <span style="flex:0 0 auto;">to</span>
+        <input type="number" id="range-end" min="1" value="50" style="flex:1 1 0; min-width:0; width:100%; max-width:100%; padding:8px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-primary); box-sizing:border-box;">
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+        <button class="topbar-btn" onclick="closePageRangeModal()">Cancel</button>
+        <button class="topbar-btn btn-primary" onclick="confirmPageRange()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI MODELS MODAL -->
+  <div id="ai-models-modal" style="display:none; position:fixed; inset:0; z-index:10000; align-items:center; justify-content:center; padding:14px; box-sizing:border-box;">
+    <div class="ai-models-modal-card">
+      <div class="ai-models-modal-header">
+        <div class="ai-models-modal-title-wrap">
+          <h3>AI Models</h3>
+          <div class="ai-models-modal-subtitle">Manage active model and fallback order</div>
+        </div>
+        <button type="button" class="ai-model-head-btn" onclick="toggleAIModelsInfo()" aria-label="Information" title="Information">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><circle cx="12" cy="7.2" r=".8" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button type="button" class="ai-model-head-btn close" onclick="closeAIModelsModal()" aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>
+        </button>
+      </div>
+
+      <div id="ai-model-info-panel" class="ai-model-info-panel">
+        <div class="ai-model-info-grid">
+          <div class="ai-model-info-row"><span class="ai-model-info-label">Connection</span><span>Any OpenAI-compatible endpoint can be configured. API keys remain in this browser.</span></div>
+          <div class="ai-model-info-row"><span class="ai-model-info-label">Fallback</span><span>Models are tried in the order shown below when an AI request fails.</span></div>
+          <div class="ai-model-info-row"><span class="ai-model-info-label">Reorder</span><span>Use the handle at the left of a model card to change its priority.</span></div>
+          <div class="ai-model-auto-row">
+            <div class="ai-model-auto-main">
+              <input type="checkbox" id="ai-model-autoswitch-checkbox" onchange="handleAutoSwitchToggle(this.checked)">
+              <div><b style="color:var(--text-primary)">Auto-switch on error</b><div>Always enabled by the application.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai-models-toolbar">
+        <button class="topbar-btn" onclick="document.getElementById('ai-models-import-input').click()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+          <span class="label-desktop">Import</span>
+        </button>
+        <button class="topbar-btn" onclick="exportAIModels()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9V20"/><path d="m8 16 4 4 4-4"/><path d="M5 4h14v6"/></svg>
+          <span class="label-desktop">Export</span>
+        </button>
+        <div class="ai-models-toolbar-spacer"></div>
+        <button class="topbar-btn btn-primary" onclick="toggleAIModelAddForm()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span class="label-desktop">Add model</span>
+        </button>
+        <input type="file" id="ai-models-import-input" accept=".json" style="display:none;" onchange="importAIModels(this.files)">
+      </div>
+
+      <div id="ai-models-list" class="ai-models-list"></div>
+
+      <div class="ai-model-add-form" id="ai-model-add-form">
+        <h4 class="ai-model-add-title">Add model</h4>
+        <div class="ai-model-form-grid">
+          <div class="ai-field"><label for="ai-model-name-input">Name</label><input type="text" id="ai-model-name-input" placeholder="e.g. GPT-4o"></div>
+          <div class="ai-field"><label for="ai-model-id-input">Model ID</label><input type="text" id="ai-model-id-input" placeholder="e.g. gpt-4o"></div>
+          <div class="ai-field ai-field-full"><label for="ai-model-url-input">API URL</label><input type="text" id="ai-model-url-input" placeholder="https://api.openai.com/v1/chat/completions"></div>
+          <div class="ai-field ai-field-full"><label for="ai-model-key-input">API Key</label><input type="password" id="ai-model-key-input" placeholder="API key"></div>
+          <div class="ai-field ai-field-full">
+            <label for="ai-model-api-type-select">API Type</label>
+            <select id="ai-model-api-type-select">
+              <option value="openai">OpenAI-compatible</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+          </div>
+        </div>
+        <label class="ai-model-json-label"><input type="checkbox" id="ai-model-json-checkbox" checked> Supports JSON response format</label>
+        <div id="ai-model-add-status" class="ai-model-add-status"></div>
+        <div class="ai-model-form-actions">
+          <button type="button" class="topbar-btn" onclick="clearAIModelForm()">Clear</button>
+          <button type="button" class="topbar-btn btn-primary" id="ai-model-add-btn" onclick="handleAddNewAIModel()">Verify &amp; Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT PAGE MODAL -->
+  <div id="edit-page-modal">
+    <div class="modal-card">
+      <h3>Edit Page(s)</h3>
+      <p class="modal-desc">Enter the page number(s) you want to edit. Use <b>spaces</b> to separate multiple pages (e.g., <b>9 10 11</b>).</p>
+      <input type="text" id="edit-page-input" placeholder="e.g., 5 or 9 10 11" autocomplete="off">
+      <div class="modal-actions">
+        <button class="topbar-btn" onclick="closeEditPageModal()">Cancel</button>
+        <button class="topbar-btn btn-primary" onclick="confirmEditPages()">Edit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ JAVASCRIPT MODULES ============ -->
+  <!-- Load order matters: config → constants → helpers → managers → core → app -->
+
+  <!-- 1. Configuration -->
+  <script src="js/config.js"></script>
+
+  <!-- 2. Constants & UI Icons -->
+  <script src="js/constants.js"></script>
+
+  <!-- 3. UI Helpers (toast, progress, theme, etc.) -->
+  <script src="js/ui-helpers.js"></script>
+
+  <!-- 4. Tab Manager -->
+  <script src="js/tab-manager.js"></script>
+
+  <!-- 5. AI Models Manager -->
+  <script src="js/ai-models.js"></script>
+
+  <!-- 6. Command Menu (@ commands) -->
+  <script src="js/command-menu.js"></script>
+
+  <!-- 7. Math Renderer (KaTeX) -->
+  <script src="js/math-renderer.js"></script>
+
+  <!-- 8. Document Editor (core editing, pagination, history) -->
+  <script src="js/document-editor.js"></script>
+
+  <!-- 9. OCR Pipeline -->
+  <script src="js/ocr.js"></script>
+
+  <!-- 10. PDF Export -->
+  <script src="js/pdf-export.js"></script>
+
+  <!-- 11. Main App (initialization) -->
+  <script src="js/app.js"></script>
+
+</body>
+</html>
