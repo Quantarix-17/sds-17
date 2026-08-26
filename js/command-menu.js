@@ -888,9 +888,53 @@ function buildAtCommandInstructionText(intentPayload) {
     parts.push('EDIT SAFETY: Never append, prepend, replace_all, or recreate the document. Use update_page for one selected page or update_pages for multiple selected pages. Preserve every unselected page exactly.');
     if (intentPayload.editPages && intentPayload.editPages.length) parts.push(`SELECTED EDIT PAGES: ${intentPayload.editPages.join(', ')}.`);
   }
-  // ... (the rest of the instruction building logic is identical to the original)
-  // For brevity, I'm including the core structure; the full logic is in the original code.
-  // The complete implementation will be in the final delivered package.
+
+  // LENGTH (only meaningful with @Create PDF)
+  if (intentPayload.length === 'long_pdf') {
+    parts.push('LENGTH: LONG — produce a genuinely long, comprehensive document with full depth, detail and examples. Do not shorten or summarize.');
+  } else if (intentPayload.length === 'short_pdf') {
+    parts.push('LENGTH: SHORT — produce a compact document covering only essential concepts and examples. Avoid unnecessary elaboration.');
+  }
+
+  // DIFFICULTY (exam)
+  if (intentPayload.difficulty === 'easy') {
+    parts.push('DIFFICULTY: EASY — use simple, accessible language and easier questions.');
+  } else if (intentPayload.difficulty === 'standard') {
+    parts.push('DIFFICULTY: STANDARD — use a balanced, moderate exam difficulty level.');
+  } else if (intentPayload.difficulty === 'hard') {
+    parts.push('DIFFICULTY: HARD — use advanced, challenging language and questions.');
+  }
+
+  // TARGET PAGE (for edit/refine-type operations other than refine_pagination, already handled above)
+  if (intentPayload.pageTarget && intentPayload.intent !== 'edit' && intentPayload.intent !== 'refine_pagination') {
+    parts.push(`TARGET PAGE: Apply this action only to page ${intentPayload.pageTarget}. Preserve all other pages exactly as-is.`);
+  }
+
+  // LANGUAGE
+  if (intentPayload.language) {
+    parts.push(`LANGUAGE: Write the entire output in "${intentPayload.language}". Do not mix in other languages unless technical terms require it.`);
+  }
+
+  // VISUAL / CANVAS
+  if (intentPayload.visual === 'canvas') {
+    parts.push('VISUAL SUPPORT: CANVAS — increase useful visual elements (tables, diagrams, concept maps) wherever they genuinely help understanding.');
+  }
+
+  // CONTENT TYPES (exam question types + exercise), with counts
+  if (intentPayload.contentTypes && intentPayload.contentTypes.length) {
+    const contentLabels = {
+      mcq: 'MCQ (multiple-choice questions)',
+      cq: 'CQ (creative questions)',
+      short_question: 'Short Questions',
+      exercise: 'Practice Exercises'
+    };
+    const contentParts = intentPayload.contentTypes.map(id => {
+      const count = intentPayload.questionCounts ? intentPayload.questionCounts[id] : null;
+      const label = contentLabels[id] || id;
+      return count ? `${label}: ${count}` : label;
+    });
+    parts.push(`CONTENT TYPES TO INCLUDE: ${contentParts.join(', ')}.`);
+  }
 
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
 }
