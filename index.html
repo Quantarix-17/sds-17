@@ -83,7 +83,7 @@
   </style>
 </head>
 <body>
-  <div id="pdf-print-stage" aria-hidden="true"></div>
+  <div id="pdf-print-stage"></div>
 
   <!-- TOP NAV -->
   <div id="topbar">
@@ -108,7 +108,8 @@
     <button class="topbar-fab-btn" id="topbar-new-fab-btn" onclick="startNewProject()" aria-label="Start new document" title="New document">+</button>
     <button class="topbar-btn" id="topbar-more-btn" type="button" aria-label="More options" aria-haspopup="menu" aria-expanded="false">⋮</button>
 
-    <div id="topbar-actions" role="menu" aria-hidden="true">
+    <!-- ARIA issue fixed here: aria-hidden="true" removed -->
+    <div id="topbar-actions" role="menu">
       <label class="topbar-toggle-label" title="Show document analytics summary after generation">
         <input type="checkbox" id="analytics-toggle" checked>Show Analytics
       </label>
@@ -398,16 +399,16 @@
     </div>
   </div>
 
-  <!-- ===== MISSING FUNCTIONS & UI FALLBACK FIX ===== -->
+  <!-- ===== MISSING FUNCTIONS & UI FALLBACK FIX (STANDARD GLOBAL FUNCTIONS) ===== -->
   <script>
-    // ১. math-renderer.js এর এরর ফিক্স
-    window.findBrokenDiagrams = window.findBrokenDiagrams || function(container) {
+    // ১. math-renderer.js এর এরর ফিক্স (Standard Function)
+    function findBrokenDiagrams(container) {
         console.warn("findBrokenDiagrams fallback executed.");
         return []; 
-    };
+    }
 
-    // ২. document-editor.js এর এরর ফিক্স
-    window.applyPDFVisualFormat = window.applyPDFVisualFormat || function(formatName) {
+    // ২. document-editor.js এর এরর ফিক্স (Standard Function)
+    function applyPDFVisualFormat(formatName) {
         console.warn("applyPDFVisualFormat fallback executed: " + formatName);
         const canvases = document.querySelectorAll('.doc-page-canvas');
         canvases.forEach(canvas => {
@@ -416,29 +417,29 @@
                 canvas.classList.add(formatName.includes('format-') ? formatName : 'pdf-format-' + formatName);
             }
         });
-    };
+    }
     
-    // ৩. গ্লোবাল UI ফাংশন (যদি অন্যান্য স্ক্রিপ্ট মিসিং থাকে তার জন্য ব্যাকআপ)
-    window.toggleDarkMode = window.toggleDarkMode || function() {
+    // ৩. গ্লোবাল UI ফাংশন (Standard Function Declarations)
+    function toggleDarkMode() {
         const isDark = document.documentElement.classList.toggle('dark');
         localStorage.setItem('studio_theme', isDark ? 'dark' : 'light');
-    };
+    }
 
-    window.togglePhotocopyMode = window.togglePhotocopyMode || function() {
+    function togglePhotocopyMode() {
         const isPhoto = document.body.classList.toggle('photocopy-mode');
         const label = document.getElementById('mode-toggle-label');
         if (label) label.textContent = isPhoto ? 'B&W' : 'Color';
-    };
+    }
 
-    window.setMobileView = window.setMobileView || function(view) {
+    function setMobileView(view) {
         const container = document.getElementById('main-container');
         if (container) container.className = 'mobile-view-' + view;
         document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
         const activeBtn = document.getElementById('mob-btn-' + view);
         if (activeBtn) activeBtn.classList.add('active');
-    };
+    }
 
-    window.switchPreviewTab = window.switchPreviewTab || function(tab) {
+    function switchPreviewTab(tab) {
         const docContainer = document.getElementById('document-view-container');
         const pdfContainer = document.getElementById('pdf-view-container');
         const editorBtn = document.getElementById('tab-editor-btn');
@@ -455,38 +456,38 @@
             if (pdfBtn) pdfBtn.classList.add('active');
             if (editorBtn) editorBtn.classList.remove('active');
         }
-    };
+    }
     
-    window.switchPreviewTabDesktop = window.switchPreviewTabDesktop || window.switchPreviewTab;
+    function switchPreviewTabDesktop(tab) { switchPreviewTab(tab); }
 
-    window.executeEditorCommand = window.executeEditorCommand || function(command, value = null) {
+    function executeEditorCommand(command, value = null) {
         document.execCommand(command, false, value);
         const activePage = document.querySelector('.doc-page-canvas');
         if (activePage) activePage.focus();
-    };
+    }
 
-    window.openAIModelsModal = window.openAIModelsModal || function() {
+    function openAIModelsModal() {
         const modal = document.getElementById('ai-models-modal');
         if (modal) modal.style.display = 'flex';
-    };
-    window.closeAIModelsModal = window.closeAIModelsModal || function() {
+    }
+    function closeAIModelsModal() {
         const modal = document.getElementById('ai-models-modal');
         if (modal) modal.style.display = 'none';
-    };
-    window.toggleAtCommandMenu = window.toggleAtCommandMenu || function() {
+    }
+    function toggleAtCommandMenu() {
         const menu = document.getElementById('at-command-menu');
         const backdrop = document.getElementById('at-command-menu-backdrop');
         if (menu) {
             const isOpen = menu.classList.toggle('open');
             if (backdrop) backdrop.classList.toggle('open', isOpen);
         }
-    };
-    window.closeAtCommandMenu = window.closeAtCommandMenu || function() {
+    }
+    function closeAtCommandMenu() {
         const menu = document.getElementById('at-command-menu');
         const backdrop = document.getElementById('at-command-menu-backdrop');
         if (menu) menu.classList.remove('open');
         if (backdrop) backdrop.classList.remove('open');
-    };
+    }
     
     // Mobile 3-dot menu toggle event listener fallback
     document.addEventListener('DOMContentLoaded', () => {
