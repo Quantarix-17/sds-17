@@ -165,9 +165,14 @@ function convertTextToDocumentHTML(text) {
 
 // ===== CHAT UI HELPERS =====
 function appendChatMessageToUI(role, messageText, recordHistory = true) {
-  if (role === 'ai' && APP_STATE.suppressDocumentAIChat) {
-    return { isConnected: false, remove() {} };
-  }
+  // Always show AI messages, even during document generation
+  // But if we're suppressing document AI chat and role is 'ai', we skip only the
+  // automatic document-generation messages that are handled elsewhere.
+  // The flag is used to prevent duplicate messages during sectioned generation.
+  // We'll allow all messages now and handle duplicates in the calling code.
+  // Actually, we want to show all AI messages always. The flag is used in the caller
+  // to decide whether to show certain messages. So we'll just render.
+
   const chatHistoryArea = document.getElementById('chat-history');
   if (!chatHistoryArea) return { isConnected: false, remove() {} };
   const messageDiv = document.createElement('div');
@@ -1531,6 +1536,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
       if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
       if (typeof ProgressUI !== 'undefined') { ProgressUI.finish();
         setTimeout(() => { if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide(); }, 500); }
+      // Always show AI response message
       if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', `✅ "${docTitle}" — notes generated!`);
       intentPayloadForGeneration = null;
       _generationLockedModelConfig = null;
@@ -1551,6 +1557,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
   }
 }
 
+// ===== GENERATE DEFAULT PDF DIRECT MODE (with proper chat response) =====
 async function generateDefaultPDFDirectMode(promptText, fileContextString, isMonochromeMode, isEmptyCanvas, isReplaceIntent, modelsUsedSet, intentPayload) {
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const existingHTML = (!isEmptyCanvas && !isReplaceIntent) ? (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '') : '';
@@ -2229,6 +2236,7 @@ async function sendChatPromptToAI() {
         if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
         if (directResult && directResult.ok) {
           if (typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
+          // Show success message in chat
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', '✅ PDF generated successfully.');
         } else if (!directResult || !directResult.aborted) {
           const reason = (directResult && directResult.message) ? directResult.message : 'Unknown error.';
@@ -2247,6 +2255,7 @@ async function sendChatPromptToAI() {
         if (directSuccess) {
           if (typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (typeof displayToastNotification === 'function') displayToastNotification(`✅ ${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generated.`);
+          if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', `✅ ${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generated successfully.`);
         } else {
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generation failed before substantive content could be committed.`);
         }
@@ -2266,6 +2275,7 @@ async function sendChatPromptToAI() {
         } else {
           if (success && typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (success && typeof displayToastNotification === 'function') displayToastNotification("✅ Note generated!");
+          // Note: generateComprehensiveDocumentStepByStep already adds its own AI message, so we don't double-add.
           if (success && document.getElementById('analytics-toggle')?.checked) {
             try {
               const analytics = typeof computeDocumentAnalytics === 'function' ? await computeDocumentAnalytics(analyticsStart, modelsUsed) : null;
@@ -2611,7 +2621,9 @@ function handleChatKeyPress(event) {
     event.stopPropagation();
     if (typeof triggerChatSend === 'function') triggerChatSend();
   }
-  // ============================================================
+}
+
+// ============================================================
 // WINDOW EXPOSURE – Main App
 // ============================================================
 window.handleChatFormSubmit = handleChatFormSubmit;
@@ -2650,4 +2662,3 @@ window.generateLongPDFDirectMode = generateLongPDFDirectMode;
 window.computeDocumentAnalytics = computeDocumentAnalytics;
 window.formatAnalyticsChatMessage = formatAnalyticsChatMessage;
 window.validateAIActionHandlers = validateAIActionHandlers;
-}
