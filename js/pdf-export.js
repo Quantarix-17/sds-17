@@ -1,6 +1,6 @@
 // ========================================================================
 // PDF EXPORT - True PDF (native print), Image PDF (rasterized), Word export,
-// and live PDF iframe preview with enhanced UX
+// and live PDF iframe preview with enhanced UX and scroll fix
 // ========================================================================
 
 // ===== PDF LIBRARY LOADER =====
@@ -571,7 +571,7 @@ async function _buildImagePDFRenderPages() {
   };
 }
 
-// ===== LIVE PDF IFRAME PREVIEW (Enhanced UX) =====
+// ===== LIVE PDF IFRAME PREVIEW (Enhanced UX + Scroll Fix) =====
 let _pdfPreviewGenerationToken = 0;
 let _pdfPreviewDebounceTimer = null;
 let _pdfPreviewRunning = false;
@@ -674,6 +674,15 @@ async function _runLivePDFIframePreview(requestedToken) {
   const iframe = document.getElementById('pdf-iframe');
   const loadingEl = document.getElementById('pdf-preview-loading');
   const loadingStatusEl = document.getElementById('pdf-preview-loading-status');
+  // PDF view container - ensure it's scrollable
+  const pdfViewContainer = document.getElementById('pdf-view-container');
+  if (pdfViewContainer) {
+    pdfViewContainer.style.overflowY = 'auto';
+    pdfViewContainer.style.overflowX = 'hidden';
+    pdfViewContainer.style.webkitOverflowScrolling = 'touch';
+    pdfViewContainer.style.height = '100%';
+    pdfViewContainer.style.flex = '1 1 auto';
+  }
   if (!iframe) return;
 
   if (_pdfPreviewRunning) {
@@ -693,6 +702,11 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
   iframe.classList.add('pdf-loading');
   iframe.style.opacity = '0.3';
+  // Ensure iframe can scroll its content if needed, but we'll rely on container scroll
+  iframe.style.height = '100%';
+  iframe.style.width = '100%';
+  iframe.style.border = 'none';
+  iframe.style.display = 'block';
 
   try {
     const signature = hashPDFPreviewSignature();
@@ -746,7 +760,7 @@ async function _runLivePDFIframePreview(requestedToken) {
     iframe.onload = onLoad;
     iframe.onerror = onError;
 
-    // Build the preview HTML with enhanced styling
+    // Build the preview HTML with enhanced styling and scroll support
     const previewHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
       buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) :
       _buildFallbackPreviewHTML(pageChunks, isMonochromeMode);
@@ -847,9 +861,20 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced) =====
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced + Scrollable) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   const isExam = document.body.classList.contains('exam-document');
+  // Allow pages to be scrollable inside the iframe if needed, but we'll make the container scroll
+  // For better UX, we set overflow: auto on the body of the preview so that if the content
+  // is taller than the viewport, the user can scroll within the iframe.
+  // But actually, we want the parent container to scroll, so the iframe should have a fixed height
+  // and the body inside should have overflow: auto.
+  // We'll make the iframe fill the container and the container scrolls.
+  // So inside the preview, we keep pages as blocks with auto height? No, we want A4 pages.
+  // Best: make the preview body have overflow: auto and pages stack vertically.
+  // Then the iframe will have a fixed height (100% of container) and the body will scroll.
+  // So we set html,body { height:100%; overflow-y:auto; } and pages are normal.
+
   const pagesHTML = pageChunks.map((html, idx) =>
     `<div class="pdf-page-wrap"><div class="pdf-page ${isExam ? 'exam-document' : ''}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
@@ -861,7 +886,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
     <style>
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-      html, body { margin:0; padding:0; }
+      html, body { margin:0; padding:0; height:100%; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
       body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
       .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; contain:layout style paint; content-visibility:auto; contain-intrinsic-size:${PDF_LAYOUT.height}px; }
       .pdf-page { background:#fff; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
@@ -912,6 +937,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
     </style>
   </head><body>${pagesHTML}
   <script>
+    // Ensure the body can scroll if content overflows
     function fitPagesToScreen(){
       var vw = document.documentElement.clientWidth;
       var pageWidth = ${PDF_LAYOUT.width};
@@ -1142,7 +1168,23 @@ function switchPreviewTab(tabName) {
   } else {
     if (docView) docView.style.display = 'none';
     if (toolbar) toolbar.style.display = 'none';
-    if (pdfView) pdfView.style.display = 'flex';
+    if (pdfView) {
+      pdfView.style.display = 'flex';
+      pdfView.style.flexDirection = 'column';
+      pdfView.style.height = '100%';
+      pdfView.style.overflowY = 'auto';
+      pdfView.style.overflowX = 'hidden';
+      pdfView.style.webkitOverflowScrolling = 'touch';
+      // Ensure the iframe fills the container
+      const iframe = document.getElementById('pdf-iframe');
+      if (iframe) {
+        iframe.style.height = '100%';
+        iframe.style.width = '100%';
+        iframe.style.border = 'none';
+        iframe.style.display = 'block';
+        iframe.style.flex = '1 1 auto';
+      }
+    }
     // Show loading indicator before generating preview
     const loadingEl = document.getElementById('pdf-preview-loading');
     if (loadingEl) {
