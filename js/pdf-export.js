@@ -328,10 +328,6 @@ async function exportToImagePDF(btn) {
   let renderPages = null;
   let renderHost = null;
 
-  // Defensive cleanup: if a previous export was interrupted (backgrounded
-  // tab, navigation, thrown error before this function existed), a stale
-  // render host can be left sitting on top of the UI. Remove it before
-  // starting a new export.
   const staleHost = document.getElementById('image-pdf-render-host');
   if (staleHost && staleHost.parentNode) staleHost.parentNode.removeChild(staleHost);
 
@@ -681,7 +677,6 @@ async function _runLivePDFIframePreview(requestedToken) {
   const iframe = document.getElementById('pdf-iframe');
   const loadingEl = document.getElementById('pdf-preview-loading');
   const loadingStatusEl = document.getElementById('pdf-preview-loading-status');
-  // PDF view container - ensure it's scrollable
   const pdfViewContainer = document.getElementById('pdf-view-container');
   if (pdfViewContainer) {
     pdfViewContainer.style.overflowY = 'auto';
@@ -698,7 +693,6 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
   _pdfPreviewRunning = true;
   
-  // Show loading with better UX
   if (loadingEl) {
     loadingEl.classList.add('active');
     loadingEl.setAttribute('aria-busy', 'true');
@@ -709,7 +703,6 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
   iframe.classList.add('pdf-loading');
   iframe.style.opacity = '0.3';
-  // Ensure iframe can scroll its content if needed, but we'll rely on container scroll
   iframe.style.height = '100%';
   iframe.style.width = '100%';
   iframe.style.border = 'none';
@@ -720,7 +713,6 @@ async function _runLivePDFIframePreview(requestedToken) {
     const isMonochromeMode = document.body.classList.contains('photocopy-mode');
     const previewMode = isMonochromeMode ? 'mono' : 'color';
 
-    // Check cache
     if (_pdfLastRenderedSignature === signature && _pdfLastRenderedMode === previewMode && (iframe.src || iframe.srcdoc)) {
       if (loadingStatusEl) loadingStatusEl.textContent = '✅ PDF preview ready';
       if (loadingEl) {
@@ -747,7 +739,6 @@ async function _runLivePDFIframePreview(requestedToken) {
       loadingStatusEl.textContent = `📄 Rendering ${pageChunks.length} page${pageChunks.length === 1 ? '' : 's'}...`;
     }
 
-    // Set up iframe error handling with retry
     let loadResolve, loadReject;
     const loadPromise = new Promise((resolve, reject) => {
       loadResolve = resolve;
@@ -767,7 +758,6 @@ async function _runLivePDFIframePreview(requestedToken) {
     iframe.onload = onLoad;
     iframe.onerror = onError;
 
-    // Build the preview HTML with enhanced styling and scroll support
     const previewHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
       buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) :
       _buildFallbackPreviewHTML(pageChunks, isMonochromeMode);
@@ -776,7 +766,6 @@ async function _runLivePDFIframePreview(requestedToken) {
       throw new Error('Unable to initialize PDF preview frame.');
     }
 
-    // Wait for load with timeout
     await Promise.race([
       loadPromise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('Preview load timeout')), 12000))
@@ -803,7 +792,6 @@ async function _runLivePDFIframePreview(requestedToken) {
         if (loadingStatusEl) {
           loadingStatusEl.textContent = `🔄 Retrying preview (${_pdfPreviewRetryCount}/${MAX_PREVIEW_RETRIES})...`;
         }
-        // Retry after delay
         setTimeout(() => {
           if (_pdfPreviewGenerationToken === myToken) {
             _pdfPreviewRunning = false;
@@ -854,6 +842,8 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
       .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; overflow:visible !important; color:#000 !important; }
       .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
       .katex-display::-webkit-scrollbar { display:none !important; }
+      .katex-eq.katex-render-failed { background-color:#fee2e2 !important; color:#dc2626 !important; border:1px solid #fca5a5 !important; padding:2px 6px !important; border-radius:4px !important; display:inline-block !important; font-weight:600 !important; }
+      .katex-eq.katex-render-failed .katex-fallback { color:#dc2626 !important; font-weight:600 !important; }
       @media (max-width:850px) { body{padding:8px 0 !important;} .pdf-page-wrap { overflow:hidden; margin:0 auto 12px; } .pdf-page { transform-origin:top left; } }
       @media print { html, body { height:auto !important; overflow:visible !important; } .pdf-page-wrap { content-visibility:visible !important; contain-intrinsic-size:auto !important; page-break-after:always; margin:0; } body { padding:0; background:#fff; } }
     </style>
@@ -897,16 +887,6 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
 // ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced + Scrollable) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   const isExam = document.body.classList.contains('exam-document');
-  // Allow pages to be scrollable inside the iframe if needed, but we'll make the container scroll
-  // For better UX, we set overflow: auto on the body of the preview so that if the content
-  // is taller than the viewport, the user can scroll within the iframe.
-  // But actually, we want the parent container to scroll, so the iframe should have a fixed height
-  // and the body inside should have overflow: auto.
-  // We'll make the iframe fill the container and the container scrolls.
-  // So inside the preview, we keep pages as blocks with auto height? No, we want A4 pages.
-  // Best: make the preview body have overflow: auto and pages stack vertically.
-  // Then the iframe will have a fixed height (100% of container) and the body will scroll.
-  // So we set html,body { height:100%; overflow-y:auto; } and pages are normal.
 
   const pagesHTML = pageChunks.map((html, idx) =>
     `<div class="pdf-page-wrap"><div class="pdf-page ${isExam ? 'exam-document' : ''}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
@@ -927,6 +907,8 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; padding-left:0 !important; padding-right:0 !important; overflow:visible !important; color:#000 !important; }
       .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
       .katex-display::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+      .katex-eq.katex-render-failed { background-color:#fee2e2 !important; color:#dc2626 !important; border:1px solid #fca5a5 !important; padding:2px 6px !important; border-radius:4px !important; display:inline-block !important; font-weight:600 !important; }
+      .katex-eq.katex-render-failed .katex-fallback { color:#dc2626 !important; font-weight:600 !important; }
       h1{font-family:Arial,sans-serif;font-size:22pt;margin-bottom:10pt;color:${isMonochromeMode?'#000':'#1e3a8a'};border-bottom:2px solid ${isMonochromeMode?'#000':'#2563eb'};padding-bottom:4px}
       h2{font-family:Arial,sans-serif;font-size:16pt;margin:12pt 0 6pt;color:${isMonochromeMode?'#000':'#1e40af'}}
       h3{font-family:Arial,sans-serif;font-size:13pt;margin:10pt 0 4pt;color:${isMonochromeMode?'#000':'#0369a1'}}
@@ -946,7 +928,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .quiz-item.bangla-question .quiz-option:nth-child(2)::before{content:'খ)'}
       .quiz-item.bangla-question .quiz-option:nth-child(3)::before{content:'গ)'}
       .quiz-item.bangla-question .quiz-option:nth-child(4)::before{content:'ঘ)'}
-      .quiz-answer-key{margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}.quiz-answer-title{font-weight:800;font-size:11pt;color:${isMonochromeMode?'#000':'#1e3a8a'};margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.quiz-answer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 10px;line-height:1.35}
+      .quiz-answer-key{column-span:all;margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}.quiz-answer-title{font-weight:800;font-size:11pt;color:${isMonochromeMode?'#000':'#1e3a8a'};margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.quiz-answer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 10px;line-height:1.35}
       .block-example{background:${isMonochromeMode?'#fff':'#f0fdf4'};border-left:4px solid ${isMonochromeMode?'#000':'#10b981'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-definition{background:${isMonochromeMode?'#fff':'#eff6ff'};border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-warning{background:${isMonochromeMode?'#fff':'#fef2f2'};border-left:4px solid ${isMonochromeMode?'#000':'#ef4444'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-important{background:${isMonochromeMode?'#fff':'#fff7ed'};border-left:4px solid ${isMonochromeMode?'#000':'#f97316'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-note{background:${isMonochromeMode?'#fff':'#fdf2f8'};border-left:4px solid ${isMonochromeMode?'#000':'#ec4899'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
       .block-accent{background:transparent !important;border:none !important;border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'} !important;padding:8px 14px;margin:10px 0}.block-solution{background:${isMonochromeMode?'#fff':'#f5f3ff'};border:1px solid ${isMonochromeMode?'#000':'#ddd6fe'};border-radius:8px;padding:14px 16px 10px;margin:14px 0}
       .exam-header-block{border:0;border-bottom:2px solid #111;border-radius:0;padding:0 0 10px;margin:0 0 14px;font-family:'Times New Roman',Times,serif;page-break-inside:avoid;break-inside:avoid}
@@ -958,19 +940,23 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .exam-header-field{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
       .exam-header-field .label{font-weight:700;color:${isMonochromeMode?'#000':'#16233f'}}
       .exam-header-field .blank{flex:1;border-bottom:1px solid #64748b;min-width:40px;min-height:1.1em;display:inline-block}
-      .omr-sheet-page{padding-top:4px}
+      .omr-sheet-page{padding-top:4px;break-inside:avoid;page-break-inside:avoid}
       .omr-sheet-title{text-align:center;font-size:14pt;font-weight:800;letter-spacing:.06em;color:${isMonochromeMode?'#000':'#1e3a8a'};margin:0 0 4px}
       .omr-sheet-header{border:2px solid #16233f;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px 18px;font-size:10.5pt}
       .omr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 10px;border:1px solid #cbd5e1;border-radius:10px;padding:12px 14px}
       .omr-row{display:flex;align-items:center;gap:6px;break-inside:avoid;page-break-inside:avoid;font-size:9.5pt}
       .omr-qnum{width:20px;font-weight:700;color:${isMonochromeMode?'#000':'#16233f'};flex-shrink:0}
       .omr-bubble{width:15px;height:15px;border-radius:50%;border:1.4px solid #334155;display:inline-flex;align-items:center;justify-content:center;font-size:7pt;font-weight:700;color:#334155;flex-shrink:0}
+      .omr-sheet-page.bangla-omr .omr-bubble { font-size:6.2pt; }
+      .photocopy-mode .quiz-answer-key { background:#fff !important; border-color:#000 !important; }
+      .photocopy-mode .omr-sheet-header { border-color:#000 !important; }
+      .photocopy-mode .omr-grid { border-color:#000 !important; }
+      .photocopy-mode .omr-bubble { border-color:#000 !important; color:#000 !important; }
       @media print { html, body { height:auto !important; overflow:visible !important; -webkit-overflow-scrolling:auto !important; } .pdf-page-wrap{contain:none !important; content-visibility:visible !important; contain-intrinsic-size:auto !important;} body{padding:0 !important;background:#fff !important; display:block !important;} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always; break-after:page;} .pdf-page-wrap:last-child{page-break-after:auto; break-after:auto;} .pdf-page{transform:none !important;box-shadow:none !important} }
       @media (max-width:850px) { body{padding:8px 0 !important; align-items:center;} .pdf-page-wrap{margin:0 auto 12px; overflow:hidden;} .pdf-page{transform-origin:top left;} }
     </style>
   </head><body>${pagesHTML}
   <script>
-    // Ensure the body can scroll if content overflows
     function fitPagesToScreen(){
       var vw = document.documentElement.clientWidth || window.innerWidth || 360;
       var pageWidth = ${PDF_LAYOUT.width};
@@ -985,7 +971,6 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
         document.querySelectorAll('.pdf-page-wrap').forEach(function(wrap){
           var page = wrap.querySelector('.pdf-page');
           if (!page) return;
-          // Keep intrinsic A4 size; scale from top-left so nothing is clipped
           page.style.width = pageWidth + 'px';
           page.style.height = pageHeight + 'px';
           page.style.transformOrigin = 'top left';
@@ -1035,11 +1020,6 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
     }
     fitPagesToScreen();
     window.addEventListener('resize', function(){ requestAnimationFrame(fitPagesToScreen); });
-    // Robustness net: the very first measurement can land while this iframe
-    // (or the panel hosting it) hasn't finished being laid out yet on mobile,
-    // which would freeze the page at full/incorrect scale. Re-measure a few
-    // more times after load, and keep watching with ResizeObserver so any
-    // later size change (rotation, panel resize) re-triggers the fit.
     document.addEventListener('DOMContentLoaded', fitPagesToScreen);
     window.addEventListener('load', function(){
       fitPagesToScreen();
@@ -1064,7 +1044,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== COMPUTE TRUE PDF PAGES (WITH IMPROVED PAGINATION) =====
+// ===== COMPUTE TRUE PDF PAGES (WITH IMPROVED MCQ/EXAM HANDLING) =====
 async function computeTruePDFPages(htmlOverride) {
   const isExam = document.body.classList.contains('exam-document');
   const rawHtml = htmlOverride !== undefined ? htmlOverride : (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '');
@@ -1080,7 +1060,6 @@ async function computeTruePDFPages(htmlOverride) {
       if (page) {
         page.classList.add('exam-document');
         page.innerHTML = source.innerHTML;
-        // Ensure math is rendered
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
         if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
@@ -1109,7 +1088,6 @@ async function computeTruePDFPages(htmlOverride) {
 
   const tempSource = document.createElement('div');
   tempSource.innerHTML = typeof processMathEquationsToHTML === 'function' ? processMathEquationsToHTML(typeof sanitizeHTML === 'function' ? sanitizeHTML(rawHtml) : rawHtml) : rawHtml;
-  // Apply math rendering to the source before paginating
   if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(tempSource);
   if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(tempSource);
   
@@ -1119,7 +1097,6 @@ async function computeTruePDFPages(htmlOverride) {
   const createPage = () => {
     const page = typeof createPDFMeasurePage === 'function' ? createPDFMeasurePage(offscreen) : null;
     if (page) {
-      // Apply math rendering right away
       if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
       if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
       pageEls.push(page);
@@ -1135,11 +1112,9 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  // Final pass: ensure all pages fit, shrink if necessary
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
-    // If still overflowing, try to shrink content
     if (!pageFits(page)) {
       if (typeof shrinkPageToFit === 'function') shrinkPageToFit(page);
     }
@@ -1247,12 +1222,8 @@ function switchPreviewTab(tabName) {
     if (docView) docView.style.display = 'flex';
     if (toolbar) toolbar.style.display = 'flex';
     if (pdfView) pdfView.style.display = 'none';
-    // Defensive cleanup: clear any stray export-only overlay (e.g. the
-    // Image PDF render host) that may have been left behind by an
-    // interrupted export, so it can never show up floating over the editor.
     const strayHost = document.getElementById('image-pdf-render-host');
     if (strayHost && strayHost.parentNode) strayHost.parentNode.removeChild(strayHost);
-    // Schedule multiple fits to ensure scaling after layout
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => {
         if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
@@ -1270,7 +1241,6 @@ function switchPreviewTab(tabName) {
       pdfView.style.overflowY = 'auto';
       pdfView.style.overflowX = 'hidden';
       pdfView.style.webkitOverflowScrolling = 'touch';
-      // Ensure the iframe fills the container
       const iframe = document.getElementById('pdf-iframe');
       if (iframe) {
         iframe.style.height = '100%';
@@ -1280,7 +1250,6 @@ function switchPreviewTab(tabName) {
         iframe.style.flex = '1 1 auto';
       }
     }
-    // Show loading indicator before generating preview
     const loadingEl = document.getElementById('pdf-preview-loading');
     if (loadingEl) {
       loadingEl.style.display = 'flex';
@@ -1289,12 +1258,7 @@ function switchPreviewTab(tabName) {
       if (statusEl) statusEl.textContent = '📄 Loading PDF preview...';
     }
     if (typeof generateLivePDFIframePreview === 'function') generateLivePDFIframePreview();
-    // Safety net: the iframe's own fit script runs against its size at the
-    // moment it first loads, which can be 0/stale if the panel was just
-    // made visible. Re-trigger the in-iframe fit once we know the panel is
-    // actually laid out, so mobile never gets stuck showing an un-scaled page.
     _refitPDFIframeSoon();
-    // Also refit after a delay to catch any late layout changes
     setTimeout(_refitPDFIframeSoon, 300);
     setTimeout(_refitPDFIframeSoon, 700);
   }
@@ -1428,7 +1392,7 @@ function splitOversizedTableToFit(pageEl, createContinuationPage) {
   return newPages;
 }
 
-// ===== APPEND NODE WITH PAGINATION (IMPROVED) =====
+// ===== APPEND NODE WITH PAGINATION (IMPROVED WITH MCQ SUPPORT) =====
 async function appendNodeWithPagination(node, currentPage, createPage) {
   if (node.nodeType === Node.TEXT_NODE) {
     if (!node.textContent.trim()) return currentPage;
@@ -1442,46 +1406,165 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
     return pageHasContent(currentPage) ? createPage() : currentPage;
   }
 
-  const testClone = appendClone(currentPage, node);
-  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone);
-  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(testClone);
-  await waitForImagesToLoad(testClone);
-  if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(testClone);
+  // ---- SPECIAL: MCQ Quiz Container ----
+  if (node.classList && node.classList.contains('quiz-container')) {
+    const items = Array.from(node.querySelectorAll(':scope > .quiz-item'));
+    if (items.length === 0) {
+      // Empty quiz, just add it
+      if (pageHasContent(currentPage)) currentPage = createPage();
+      const clone = node.cloneNode(true);
+      currentPage.appendChild(clone);
+      return currentPage;
+    }
+
+    // Check if the entire quiz fits
+    const testClone = node.cloneNode(true);
+    const tempPage = currentPage.cloneNode(true);
+    const footer = tempPage.querySelector('.page-footer-number');
+    if (footer) footer.remove();
+    tempPage.appendChild(testClone);
+    const measurePage = document.createElement('div');
+    measurePage.className = 'doc-page-canvas pdf-export-measure-page';
+    measurePage.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(measurePage);
+    measurePage.innerHTML = '';
+    Array.from(tempPage.childNodes).forEach(child => {
+      if (!child.classList || !child.classList.contains('page-footer-number')) {
+        measurePage.appendChild(child.cloneNode(true));
+      }
+    });
+    measurePage.style.display = 'block';
+    void measurePage.offsetHeight;
+    const fits = measurePage.scrollHeight <= 1123;
+    measurePage.style.display = '';
+    measurePage.innerHTML = '';
+    document.body.removeChild(measurePage);
+
+    if (fits) {
+      const clone = node.cloneNode(true);
+      currentPage.appendChild(clone);
+      return currentPage;
+    }
+
+    // If doesn't fit, split by items
+    if (pageHasContent(currentPage)) {
+      currentPage = createPage();
+    }
+
+    let quizContainer = document.createElement('div');
+    quizContainer.className = 'quiz-container';
+    // Copy attributes
+    Array.from(node.attributes).forEach(attr => {
+      if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
+    });
+
+    let currentPageForQuiz = currentPage;
+    currentPageForQuiz.appendChild(quizContainer);
+    let quizHasContent = false;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const itemClone = item.cloneNode(true);
+      quizContainer.appendChild(itemClone);
+
+      // Check if this page with this item fits
+      const testPage = currentPageForQuiz.cloneNode(true);
+      const footer2 = testPage.querySelector('.page-footer-number');
+      if (footer2) footer2.remove();
+      const measurePage2 = document.createElement('div');
+      measurePage2.className = 'doc-page-canvas pdf-export-measure-page';
+      measurePage2.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
+      document.body.appendChild(measurePage2);
+      measurePage2.innerHTML = '';
+      Array.from(testPage.childNodes).forEach(child => {
+        if (!child.classList || !child.classList.contains('page-footer-number')) {
+          measurePage2.appendChild(child.cloneNode(true));
+        }
+      });
+      measurePage2.style.display = 'block';
+      void measurePage2.offsetHeight;
+      const fits2 = measurePage2.scrollHeight <= 1123;
+      measurePage2.style.display = '';
+      measurePage2.innerHTML = '';
+      document.body.removeChild(measurePage2);
+
+      if (!fits2) {
+        // Remove the last item
+        quizContainer.removeChild(itemClone);
+
+        // If quiz has content, we're done with this page
+        if (quizHasContent) {
+          // Create a new page and new quiz container
+          currentPageForQuiz = createPage();
+          quizContainer = document.createElement('div');
+          quizContainer.className = 'quiz-container';
+          Array.from(node.attributes).forEach(attr => {
+            if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
+          });
+          currentPageForQuiz.appendChild(quizContainer);
+          // Add the item that didn't fit
+          const newItemClone = item.cloneNode(true);
+          quizContainer.appendChild(newItemClone);
+          quizHasContent = true;
+        } else {
+          // Quiz is empty, add the item directly
+          const newItemClone2 = item.cloneNode(true);
+          quizContainer.appendChild(newItemClone2);
+          quizHasContent = true;
+        }
+      } else {
+        quizHasContent = true;
+      }
+    }
+    return currentPageForQuiz;
+  }
+
+  // ---- SPECIAL: OMR Sheet ----
+  if (node.classList && node.classList.contains('omr-sheet-page')) {
+    if (pageHasContent(currentPage)) {
+      currentPage = createPage();
+    }
+    const clone = node.cloneNode(true);
+    currentPage.appendChild(clone);
+    return currentPage;
+  }
+
+  // ---- SPECIAL: Exam Header ----
+  if (node.classList && node.classList.contains('exam-header-block')) {
+    if (pageHasContent(currentPage)) {
+      currentPage = createPage();
+    }
+    const clone = node.cloneNode(true);
+    currentPage.appendChild(clone);
+    return currentPage;
+  }
+
+  // ---- Normal node ----
+  const testClone2 = appendClone(currentPage, node);
+  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone2);
+  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(testClone2);
+  await waitForImagesToLoad(testClone2);
+  if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(testClone2);
 
   if (pageFits(currentPage)) return currentPage;
 
-  currentPage.removeChild(testClone);
+  currentPage.removeChild(testClone2);
 
-  // Special handling for MCQ containers - keep them together as much as possible
-  if (node.classList && node.classList.contains('quiz-container')) {
-    if (pageHasContent(currentPage)) currentPage = createPage();
-    return (await splitQuizContainer(node, currentPage, createPage)).page;
-  }
-
-  // For lists
-  if (/^(UL|OL)$/i.test(node.tagName)) {
-    if (pageHasContent(currentPage)) currentPage = createPage();
-    return (await splitListElement(node, currentPage, createPage)).page;
-  }
-
-  // For text-heavy elements (P, LI, BLOCKQUOTE, PRE, CODE)
+  // Handle text splitting for paragraphs
   const childElements = Array.from(node.children || []);
   const hasOnlyText = childElements.length === 0;
   const isBreakableText = /^(P|LI|BLOCKQUOTE|PRE|CODE|DIV)$/i.test(node.tagName) && hasOnlyText;
   
   if (isBreakableText) {
-    // For plain text blocks, split by words/characters intelligently
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitPlainTextElement(node, currentPage, createPage)).page;
   }
 
-  // For elements with children that are not easily splittable (e.g., tables, SVGs)
   if (childElements.length && !/^(IMG|SVG|CANVAS|TABLE|HR)$/i.test(node.tagName)) {
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitChildFlowElement(node, currentPage, createPage)).page;
   }
 
-  // Fallback: move the whole node to the next page
   if (pageHasContent(currentPage)) currentPage = createPage();
   const finalClone = appendClone(currentPage, node);
   if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
@@ -1516,7 +1599,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
   const textContent = node.textContent || '';
   const words = textContent.trim().split(/\s+/).filter(Boolean);
   if (!words.length) {
-    // If no words (maybe just a space), return
     return { page: currentPage, didSplit: false };
   }
 
@@ -1526,7 +1608,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
   let text = '';
   let didSplit = false;
 
-  // Helper to check if a text block fits
   const checkFit = async (el) => {
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(el);
     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(el);
@@ -1541,9 +1622,7 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     
     if (!(await checkFit(chunk))) {
       if (!text) {
-        // The single word doesn't fit. Try splitting the word itself (character by character) if it's long.
         if (candidate.length > 20) {
-          // Split the candidate string into smaller chunks (e.g., 10 chars) and try to fit
           const chars = candidate.split('');
           let subText = '';
           let subChunk = cloneElementShell(node);
@@ -1552,21 +1631,16 @@ async function splitPlainTextElement(node, currentPage, createPage) {
             const subCandidate = subText ? subText + chars[j] : chars[j];
             subChunk.textContent = subCandidate;
             if (!(await checkFit(subChunk))) {
-              // The previous subChunk fits, but this one doesn't. Move the previous to page and start a new one.
               if (subText) {
-                // Remove current subChunk and keep the previous one
                 subChunk.remove();
-                // Create a new page for the rest
                 if (pageHasContent(page)) {
                   page = createPage();
                 }
-                // Start new chunk with the current character
                 subChunk = cloneElementShell(node);
                 page.appendChild(subChunk);
                 subText = chars[j];
                 subChunk.textContent = subText;
               } else {
-                // Even a single character doesn't fit (shouldn't happen), fallback to moving whole word
                 subChunk.remove();
                 if (pageHasContent(page)) {
                   page = createPage();
@@ -1581,12 +1655,10 @@ async function splitPlainTextElement(node, currentPage, createPage) {
               subText = subCandidate;
             }
           }
-          // If we successfully split by chars, we don't need the original chunk
           if (chunk.parentNode) chunk.remove();
           didSplit = true;
           break;
         } else {
-          // Single word too big for the page. Move it to a new page.
           chunk.remove();
           if (pageHasContent(page)) {
             page = createPage();
@@ -1598,9 +1670,7 @@ async function splitPlainTextElement(node, currentPage, createPage) {
           break;
         }
       } else {
-        // The previous text fits, but adding this word doesn't. So keep the previous text on this page.
         chunk.textContent = text;
-        // Start a new page for the remaining words
         const remainingWords = words.slice(i);
         if (remainingWords.length > 0) {
           const remainingText = remainingWords.join(' ');
@@ -1617,9 +1687,7 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     }
   }
 
-  // If we didn't split and there's content, just return the current page
   if (!didSplit && text) {
-    // Ensure chunk is attached
     if (!chunk.parentNode) {
       page.appendChild(chunk);
       chunk.textContent = text;
@@ -1654,48 +1722,6 @@ async function splitListElement(node, currentPage, createPage) {
       list.appendChild(itemClone);
       didSplit = true;
     }
-  }
-  return { page, didSplit };
-}
-
-async function splitQuizContainer(node, currentPage, createPage) {
-  const items = Array.from(node.querySelectorAll(':scope > .quiz-item'));
-  if (!items.length) return { page: currentPage, didSplit: false };
-  let page = currentPage;
-  let quiz = null;
-  let didSplit = false;
-
-  const startQuiz = () => {
-    quiz = cloneElementShell(node);
-    page.appendChild(quiz);
-    quiz.innerHTML = '';
-  };
-  if (!quiz) startQuiz();
-
-  for (const item of items) {
-    const itemClone = item.cloneNode(true);
-    quiz.appendChild(itemClone);
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
-    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
-    await waitForImagesToLoad(itemClone);
-    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(itemClone);
-
-    if (pageFits(page)) continue;
-
-    quiz.removeChild(itemClone);
-    if (pageHasContent(page)) {
-      page = createPage();
-      startQuiz();
-      quiz.appendChild(itemClone);
-      didSplit = true;
-    } else {
-      quiz.appendChild(itemClone);
-    }
-
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
-    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
-    await waitForImagesToLoad(itemClone);
-    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(itemClone);
   }
   return { page, didSplit };
 }
@@ -1759,5 +1785,4 @@ window.appendClone = appendClone;
 window.cloneElementShell = cloneElementShell;
 window.splitPlainTextElement = splitPlainTextElement;
 window.splitListElement = splitListElement;
-window.splitQuizContainer = splitQuizContainer;
 window.splitChildFlowElement = splitChildFlowElement;
