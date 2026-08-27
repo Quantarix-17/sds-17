@@ -326,6 +326,7 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
   docContainer.scrollTop = savedScrollPos;
   restoreCaretPosition(markerId);
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
   if (typeof enforceDiagramVisualStyles === 'function') enforceDiagramVisualStyles(docContainer);
   if (typeof applyPDFVisualFormat === 'function') applyPDFVisualFormat(typeof getActivePDFVisualFormat === 'function' ? getActivePDFVisualFormat() : 'default');
   if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
@@ -420,6 +421,7 @@ function reflowDocument() {
   restoreCaretPosition(markerId);
   HISTORY.saveState();
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
 }
 
 function getOverflowNodes(page) {
@@ -613,6 +615,7 @@ function updateSpecificPageByNumber(pageNumber, newHtml) {
 
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (error) {
     console.error('updateSpecificPageByNumber failed:', error);
@@ -647,6 +650,7 @@ function updateSpecificPagesByNumber(updates) {
     });
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (e) {
     console.error('updateSpecificPagesByNumber failed:', e);
@@ -717,6 +721,7 @@ function updateSpecificSectionByHeading(targetHeading, newHtml) {
     if (typeof paginateDocumentCanvas === 'function') paginateDocumentCanvas();
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (error) {
     console.error('updateSpecificSectionByHeading failed:', error);
@@ -1134,6 +1139,7 @@ function replaceExistingDiagramBlock(targetElement, newHtml) {
   paginateDocumentCanvas();
   updatePageFooters();
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
+  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
   return true;
 }
 
