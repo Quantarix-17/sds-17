@@ -1,6 +1,6 @@
 // ========================================================================
 // PDF EXPORT - True PDF (native print), Image PDF (rasterized), Word export,
-// and live PDF iframe preview
+// and live PDF iframe preview with enhanced UX
 // ========================================================================
 
 // ===== PDF LIBRARY LOADER =====
@@ -571,7 +571,7 @@ async function _buildImagePDFRenderPages() {
   };
 }
 
-// ===== LIVE PDF IFRAME PREVIEW =====
+// ===== LIVE PDF IFRAME PREVIEW (Enhanced UX) =====
 let _pdfPreviewGenerationToken = 0;
 let _pdfPreviewDebounceTimer = null;
 let _pdfPreviewRunning = false;
@@ -581,6 +581,8 @@ let _pdfMathPreparedSignature = '';
 let _pdfDocumentRevision = 0;
 let _pdfLastRenderedSignature = '';
 let _pdfLastRenderedMode = '';
+let _pdfPreviewRetryCount = 0;
+const MAX_PREVIEW_RETRIES = 3;
 
 function invalidatePDFPreviewCache() {
   _pdfDocumentRevision++;
@@ -589,6 +591,7 @@ function invalidatePDFPreviewCache() {
   _pdfMathPreparedSignature = '';
   _pdfLastRenderedSignature = '';
   _pdfLastRenderedMode = '';
+  _pdfPreviewRetryCount = 0;
 }
 
 function hashPDFPreviewSignature() {
@@ -678,25 +681,34 @@ async function _runLivePDFIframePreview(requestedToken) {
     return;
   }
   _pdfPreviewRunning = true;
+  
+  // Show loading with better UX
   if (loadingEl) {
     loadingEl.classList.add('active');
     loadingEl.setAttribute('aria-busy', 'true');
+    loadingEl.style.display = 'flex';
   }
-  if (loadingStatusEl) loadingStatusEl.textContent = 'Measuring pages and preparing the PDF layout…';
+  if (loadingStatusEl) {
+    loadingStatusEl.textContent = '📄 Preparing PDF preview...';
+  }
   iframe.classList.add('pdf-loading');
+  iframe.style.opacity = '0.3';
 
   try {
     const signature = hashPDFPreviewSignature();
     const isMonochromeMode = document.body.classList.contains('photocopy-mode');
     const previewMode = isMonochromeMode ? 'mono' : 'color';
 
+    // Check cache
     if (_pdfLastRenderedSignature === signature && _pdfLastRenderedMode === previewMode && (iframe.src || iframe.srcdoc)) {
-      if (loadingStatusEl) loadingStatusEl.textContent = 'PDF preview ready.';
+      if (loadingStatusEl) loadingStatusEl.textContent = '✅ PDF preview ready';
       if (loadingEl) {
         loadingEl.classList.remove('active');
+        loadingEl.style.display = 'none';
         loadingEl.setAttribute('aria-busy', 'false');
       }
       iframe.classList.remove('pdf-loading');
+      iframe.style.opacity = '1';
       _pdfPreviewRunning = false;
       return;
     }
@@ -710,46 +722,87 @@ async function _runLivePDFIframePreview(requestedToken) {
     if (!pageChunks.length) throw new Error('No renderable document pages available.');
     if (myToken !== _pdfPreviewGenerationToken) return;
 
-    if (loadingStatusEl) loadingStatusEl.textContent = `Rendering ${pageChunks.length} page${pageChunks.length === 1 ? '' : 's'}…`;
+    if (loadingStatusEl) {
+      loadingStatusEl.textContent = `📄 Rendering ${pageChunks.length} page${pageChunks.length === 1 ? '' : 's'}...`;
+    }
 
-    iframe.onerror = () => {
+    // Set up iframe error handling with retry
+    let loadResolve, loadReject;
+    const loadPromise = new Promise((resolve, reject) => {
+      loadResolve = resolve;
+      loadReject = reject;
+    });
+
+    const onLoad = () => {
       if (myToken !== _pdfPreviewGenerationToken) return;
-      if (loadingEl) {
-        loadingEl.classList.remove('active');
-        loadingEl.setAttribute('aria-busy', 'false');
-      }
-      iframe.classList.remove('pdf-loading');
-      if (typeof displayToastNotification === 'function') displayToastNotification('⚠️ PDF preview frame failed to load.');
-    };
-    iframe.onload = () => {
-      if (myToken !== _pdfPreviewGenerationToken) return;
-      if (loadingEl) {
-        loadingEl.classList.remove('active');
-        loadingEl.setAttribute('aria-busy', 'false');
-      }
-      iframe.classList.remove('pdf-loading');
+      loadResolve();
     };
 
+    const onError = () => {
+      if (myToken !== _pdfPreviewGenerationToken) return;
+      loadReject(new Error('Iframe failed to load'));
+    };
+
+    iframe.onload = onLoad;
+    iframe.onerror = onError;
+
+    // Build the preview HTML with enhanced styling
     const previewHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
       buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) :
-      '';
+      _buildFallbackPreviewHTML(pageChunks, isMonochromeMode);
+
     if (!_setPDFPreviewFrameHTML(iframe, previewHTML)) {
       throw new Error('Unable to initialize PDF preview frame.');
     }
+
+    // Wait for load with timeout
+    await Promise.race([
+      loadPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Preview load timeout')), 12000))
+    ]);
+
     _pdfLastRenderedSignature = signature;
     _pdfLastRenderedMode = previewMode;
+    _pdfPreviewRetryCount = 0;
+
+    if (loadingStatusEl) loadingStatusEl.textContent = '✅ PDF preview ready';
+    if (loadingEl) {
+      loadingEl.classList.remove('active');
+      loadingEl.style.display = 'none';
+      loadingEl.setAttribute('aria-busy', 'false');
+    }
+    iframe.classList.remove('pdf-loading');
+    iframe.style.opacity = '1';
 
   } catch (error) {
     console.error('PDF preview generation failed:', error);
     if (myToken === _pdfPreviewGenerationToken) {
+      _pdfPreviewRetryCount++;
+      if (_pdfPreviewRetryCount <= MAX_PREVIEW_RETRIES) {
+        if (loadingStatusEl) {
+          loadingStatusEl.textContent = `🔄 Retrying preview (${_pdfPreviewRetryCount}/${MAX_PREVIEW_RETRIES})...`;
+        }
+        // Retry after delay
+        setTimeout(() => {
+          if (_pdfPreviewGenerationToken === myToken) {
+            _pdfPreviewRunning = false;
+            _runLivePDFIframePreview(myToken);
+          }
+        }, 1500 * _pdfPreviewRetryCount);
+        return;
+      }
       if (loadingEl) {
         loadingEl.classList.remove('active');
+        loadingEl.style.display = 'none';
         loadingEl.setAttribute('aria-busy', 'false');
       }
-      if (loadingStatusEl) loadingStatusEl.textContent = 'Preview failed to render.';
+      if (loadingStatusEl) {
+        loadingStatusEl.textContent = '⚠️ Preview failed to render. Please try refreshing.';
+      }
       iframe.classList.remove('pdf-loading');
+      iframe.style.opacity = '1';
       if (typeof displayToastNotification === 'function') {
-        displayToastNotification('⚠️ PDF preview failed to render: ' + (error && error.message ? error.message : 'unknown error'));
+        displayToastNotification('⚠️ PDF preview failed: ' + (error && error.message ? error.message : 'unknown error'));
       }
     }
   } finally {
@@ -761,9 +814,40 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
 }
 
-window.addEventListener('beforeunload', _revokePDFPreviewObjectURL);
+// ===== FALLBACK PREVIEW HTML =====
+function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
+  const pagesHTML = pageChunks.map((html, idx) =>
+    `<div class="pdf-page-wrap"><div class="pdf-page">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+  ).join('');
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT =====
+  return `<!DOCTYPE html><html><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <style>
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      html, body { margin:0; padding:0; background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px; }
+      .pdf-page-wrap { width:794px; height:1123px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; contain:layout style paint; content-visibility:auto; contain-intrinsic-size:1123px; }
+      .pdf-page { background:#fff; width:794px; height:1123px; padding:62px 58px 58px 58px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
+      .pdf-footer { position:absolute; bottom:22px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
+      .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; overflow:visible !important; color:#000 !important; }
+      .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
+      .katex-display::-webkit-scrollbar { display:none !important; }
+      @media (max-width:850px) { .pdf-page-wrap { transform-origin:top center; width:100%; height:auto; } .pdf-page { width:100%; height:auto; min-height:1123px; } }
+      @media print { .pdf-page-wrap { page-break-after:always; margin:0; } body { padding:0; background:#fff; } }
+    </style>
+  </head><body>${pagesHTML}
+  <script>
+    function fitPages(){
+      var vw=document.documentElement.clientWidth;
+      if(vw<=850){ var scale=Math.min(1,Math.max(0.3,(vw-20)/794)); document.querySelectorAll('.pdf-page-wrap').forEach(function(w){ w.style.transform='scale('+scale+')'; w.style.transformOrigin='top center'; w.style.marginBottom='10px'; }); }
+    }
+    fitPages(); window.addEventListener('resize',fitPages);
+    setTimeout(function(){ try{ parent.postMessage('pdf-iframe-ready','*'); }catch(e){} }, 500);
+  <\/script></body></html>`;
+}
+
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   const isExam = document.body.classList.contains('exam-document');
   const pagesHTML = pageChunks.map((html, idx) =>
@@ -778,7 +862,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
       html, body { margin:0; padding:0; }
-      body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:40px 20px; }
+      body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
       .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; contain:layout style paint; content-visibility:auto; contain-intrinsic-size:${PDF_LAYOUT.height}px; }
       .pdf-page { background:#fff; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
       .pdf-footer { position:absolute; bottom:${PDF_LAYOUT.footerBottom}px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
@@ -807,7 +891,6 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .quiz-answer-key{margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}.quiz-answer-title{font-weight:800;font-size:11pt;color:${isMonochromeMode?'#000':'#1e3a8a'};margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.quiz-answer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 10px;line-height:1.35}
       .block-example{background:${isMonochromeMode?'#fff':'#f0fdf4'};border-left:4px solid ${isMonochromeMode?'#000':'#10b981'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-definition{background:${isMonochromeMode?'#fff':'#eff6ff'};border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-warning{background:${isMonochromeMode?'#fff':'#fef2f2'};border-left:4px solid ${isMonochromeMode?'#000':'#ef4444'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-important{background:${isMonochromeMode?'#fff':'#fff7ed'};border-left:4px solid ${isMonochromeMode?'#000':'#f97316'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-note{background:${isMonochromeMode?'#fff':'#fdf2f8'};border-left:4px solid ${isMonochromeMode?'#000':'#ec4899'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
       .block-accent{background:transparent !important;border:none !important;border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'} !important;padding:8px 14px;margin:10px 0}.block-solution{background:${isMonochromeMode?'#fff':'#f5f3ff'};border:1px solid ${isMonochromeMode?'#000':'#ddd6fe'};border-radius:8px;padding:14px 16px 10px;margin:14px 0}
-      .toc-container{background:${isMonochromeMode?'#fff':'#f8fafc'};border:2px solid #000;padding:16px;margin-bottom:20px}
       .exam-header-block{border:0;border-bottom:2px solid #111;border-radius:0;padding:0 0 10px;margin:0 0 14px;font-family:'Times New Roman',Times,serif;page-break-inside:avoid;break-inside:avoid}
       .exam-header-title{text-align:center;font-size:17pt;font-weight:800;color:#111;margin:0 0 3px;line-height:1.2}
       .exam-header-subtitle{text-align:center;font-size:11pt;color:#111;margin:0 0 8px;line-height:1.25}
@@ -819,89 +902,75 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .exam-header-field .blank{flex:1;border-bottom:1px solid #64748b;min-width:40px;min-height:1.1em;display:inline-block}
       .omr-sheet-page{padding-top:4px}
       .omr-sheet-title{text-align:center;font-size:14pt;font-weight:800;letter-spacing:.06em;color:${isMonochromeMode?'#000':'#1e3a8a'};margin:0 0 4px}
-      .omr-sheet-subtitle{text-align:center;font-size:9.5pt;color:${isMonochromeMode?'#000':'#64748b'};margin:0 0 14px}
       .omr-sheet-header{border:2px solid #16233f;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px 18px;font-size:10.5pt}
       .omr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 10px;border:1px solid #cbd5e1;border-radius:10px;padding:12px 14px}
       .omr-row{display:flex;align-items:center;gap:6px;break-inside:avoid;page-break-inside:avoid;font-size:9.5pt}
       .omr-qnum{width:20px;font-weight:700;color:${isMonochromeMode?'#000':'#16233f'};flex-shrink:0}
       .omr-bubble{width:15px;height:15px;border-radius:50%;border:1.4px solid #334155;display:inline-flex;align-items:center;justify-content:center;font-size:7pt;font-weight:700;color:#334155;flex-shrink:0}
-      .omr-instructions{margin-top:12px;font-size:8.8pt;color:#64748b;font-style:italic}
-      @media print { .pdf-page-wrap{contain:none !important} body{padding:0 !important;background:#fff !important} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always} .pdf-page-wrap:last-child{page-break-after:auto} .pdf-page{transform:none !important;box-shadow:none !important} .exam-document .quiz-container{column-count:2 !important;column-fill:auto !important} }
-      @media (max-width:850px) { body{padding:14px 8px}.pdf-page-wrap{transform-origin:top center} }
-    </style>
-    <style id="mobile-ui-size-fix">
-      @media (max-width:850px){:root{--mobile-topbar:56px !important;--mobile-tabbar:42px !important}
-      #topbar{height:56px !important;min-height:56px !important;padding-left:max(10px,env(safe-area-inset-left)) !important;padding-right:max(10px,env(safe-area-inset-right)) !important;gap:8px !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
-      .logo{font-size:1.05rem !important;gap:8px !important}.logo-mark{width:32px !important;height:32px !important;font-size:16px !important}
-      #topbar-more-btn,#topbar-newtab-fab-btn{width:42px !important;min-width:42px !important;height:42px !important;padding:0 !important;font-size:1.15rem !important}
-      #topbar-actions{top:64px !important;right:10px !important;left:10px !important}
-      #topbar-actions .topbar-btn,#topbar-actions .mode-toggle-btn,#topbar-actions .topbar-toggle-label{min-height:44px !important;padding:11px 14px !important;font-size:.94rem !important}
-      #tab-bar{height:42px !important;min-height:42px !important;padding:0 7px !important}
-      .tab-item{min-height:32px !important;padding:5px 9px 5px 11px !important;font-size:.74rem !important}
-      .tab-item .tab-close{width:22px !important;height:22px !important;min-width:22px !important}
-      #tab-new-btn{width:30px !important;height:30px !important;font-size:1rem !important}
-      #mobile-nav-bar{min-height:48px !important;padding:6px 9px max(6px,env(safe-area-inset-bottom,6px)) 9px !important}
-      .mobile-nav-btn{min-height:42px !important;padding:9px 10px !important;font-size:.86rem !important}
-      #main-container{height:calc(var(--mobile-vh) - var(--mobile-topbar) - var(--mobile-tabbar) - 48px) !important}
-      #preview-tabs{flex-basis:44px !important;min-height:44px !important;padding:4px 7px 0 !important}
-      #preview-tabs .tab-btn{min-height:40px !important;padding:9px 11px !important;font-size:.86rem !important}
-      #editor-toolbar{min-height:48px !important;padding:7px 9px !important;gap:5px !important}
-      #editor-toolbar .tool-btn{min-width:38px !important;min-height:38px !important;padding:6px 9px !important;font-size:.92rem !important}
-      #editor-toolbar .tool-select{min-height:38px !important;font-size:.86rem !important}
-      .color-btn-container{width:38px !important;height:36px !important}
-      #chat-history{padding:14px 12px !important;gap:11px !important}
-      .chat-message{font-size:.94rem !important;line-height:1.52 !important;padding:11px 13px !important}
-      #chat-form{min-height:58px !important;padding:8px 9px !important;padding-bottom:max(8px,env(safe-area-inset-bottom,8px)) !important;gap:6px !important}
-      .icon-btn{width:44px !important;min-width:44px !important;height:44px !important;min-height:44px !important;font-size:1.08rem !important}
-      #chat-input-textarea{min-height:44px !important;padding:10px 13px !important;font-size:16px !important}
-      #file-attach-btn,#at-command-btn,#send-message-btn{width:44px !important;min-width:44px !important;height:44px !important}
-      #active-model-select{font-size:.78rem !important;min-height:30px !important}
-      #at-command-menu{font-size:.9rem !important;max-height:min(calc(var(--mobile-vh) - 84px),600px) !important;padding:8px 8px max(14px,env(safe-area-inset-bottom,14px)) !important}
-      .at-command-category{padding:9px 12px !important;font-size:.76rem !important}
-      .at-command-item{min-height:52px !important;padding:13px 11px !important}
-      .at-command-item .at-cmd-label{font-size:.9rem !important}
-      .at-command-item .at-cmd-desc{font-size:.76rem !important}
-      #document-view-container{padding:12px 6px 24px !important}
-      #pdf-view-container{padding:8px 5px max(14px,env(safe-area-inset-bottom,14px)) !important}}
-      @media (max-width:520px){.mobile-nav-btn{font-size:.84rem !important}#file-attach-btn,#at-command-btn,#send-message-btn{width:44px !important;min-width:44px !important}}
-      @media (max-width:380px){.mobile-nav-btn{font-size:.82rem !important;padding-left:8px !important;padding-right:8px !important}.tab-item{font-size:.7rem !important}#chat-form{gap:5px !important}#chat-input-textarea{padding-left:11px !important;padding-right:11px !important}}
-      @media (min-width:851px){:root{--mobile-topbar:60px !important;--mobile-tabbar:44px !important;--mobile-vh:100dvh !important}
-      html,body{width:100% !important;min-width:0 !important;max-width:none !important;height:100% !important;height:100dvh !important}
-      body{overflow:hidden !important}
-      #topbar{height:60px !important;min-height:60px !important;padding:0 22px !important;gap:10px !important}
-      #tab-bar{height:44px !important;min-height:44px !important;padding:0 12px !important;gap:4px !important}
-      #mobile-nav-bar{display:none !important}
-      #main-container{height:auto !important;min-height:0 !important;flex:1 1 auto !important}
-      #sidebar{width:380px !important;min-width:300px !important;max-width:550px !important}
-      #preview-tabs{display:flex !important}
-      #preview-tabs-desktop{display:none !important}
-      #editor-toolbar{padding:9px 16px !important;gap:6px !important}
-      .tool-btn{min-width:30px !important;min-height:0 !important;padding:6px 10px !important;font-size:.85rem !important}
-      .tab-item{min-height:0 !important;padding:6px 12px 6px 14px !important;font-size:.78rem !important}
-      #document-view-container{padding:40px 20px !important}
-      #pdf-view-container{padding:20px !important}
-      #chat-form{padding:14px 16px !important}
-      #chat-input-textarea{font-size:.9rem !important;min-height:44px !important}}
+      @media print { .pdf-page-wrap{contain:none !important} body{padding:0 !important;background:#fff !important} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always} .pdf-page-wrap:last-child{page-break-after:auto} .pdf-page{transform:none !important;box-shadow:none !important} }
+      @media (max-width:850px) { body{padding:10px 6px} .pdf-page-wrap{transform-origin:top center; margin-bottom:12px} }
     </style>
   </head><body>${pagesHTML}
   <script>
     function fitPagesToScreen(){
-      var vw=document.documentElement.clientWidth, pageWidth=${PDF_LAYOUT.width}, pageHeight=${PDF_LAYOUT.height};
-      var horizontalPad=vw<=850?16:80, available=Math.max(1,vw-horizontalPad);
-      var scale=Math.min(1,Math.max(0.1,available/pageWidth));
-      document.querySelectorAll('.pdf-page-wrap').forEach(function(wrap){
-        var page=wrap.querySelector('.pdf-page'); if(!page)return;
-        page.style.transform='scale('+scale+')';
-        page.style.transformOrigin='top left';
-        wrap.style.width=(pageWidth*scale)+'px'; wrap.style.height=(pageHeight*scale)+'px';
+      var vw = document.documentElement.clientWidth;
+      var pageWidth = ${PDF_LAYOUT.width};
+      if (vw <= 850) {
+        var horizontalPad = 12;
+        var available = Math.max(1, vw - horizontalPad);
+        var scale = Math.min(1, Math.max(0.25, available / pageWidth));
+        document.querySelectorAll('.pdf-page-wrap').forEach(function(wrap){
+          var page = wrap.querySelector('.pdf-page');
+          if (!page) return;
+          page.style.transform = 'scale(' + scale + ')';
+          page.style.transformOrigin = 'top center';
+          wrap.style.width = (pageWidth * scale) + 'px';
+          wrap.style.height = (${PDF_LAYOUT.height} * scale) + 'px';
+          wrap.style.marginBottom = '10px';
+        });
+      } else {
+        document.querySelectorAll('.pdf-page-wrap').forEach(function(wrap){
+          var page = wrap.querySelector('.pdf-page');
+          if (!page) return;
+          page.style.transform = '';
+          page.style.transformOrigin = '';
+          wrap.style.width = pageWidth + 'px';
+          wrap.style.height = '${PDF_LAYOUT.height}px';
+          wrap.style.marginBottom = '20px';
+        });
+      }
+    }
+    function shrinkKatexToFit(){
+      document.querySelectorAll('.katex-display').forEach(function(d){
+        d.style.overflow = 'visible';
+        var w = d.closest('.katex-eq') || d.parentElement;
+        if (w) { w.style.overflow = 'visible'; w.style.background = 'transparent'; w.style.border = 'none'; w.style.boxShadow = 'none'; }
+        var a = (w && w.clientWidth) || d.clientWidth;
+        var c = d.scrollWidth;
+        if (a > 0 && c > a + 1) {
+          var r = Math.max(0.4, Math.min(a / c, 1));
+          var b = parseFloat(getComputedStyle(d).fontSize) || 16;
+          d.style.fontSize = (b * r) + 'px';
+        }
       });
     }
-    function shrinkKatexToFit(){document.querySelectorAll('.katex-display').forEach(function(d){d.style.overflow='visible';var w=d.closest('.katex-eq')||d.parentElement;if(w){w.style.overflow='visible';w.style.background='transparent';w.style.border='none';w.style.boxShadow='none'}var a=(w&&w.clientWidth)||d.clientWidth,c=d.scrollWidth;if(a>0&&c>a+1){var r=Math.max(.4,Math.min(a/c,1)),b=parseFloat(getComputedStyle(d).fontSize)||16;d.style.fontSize=(b*r)+'px'}})}
-    var readySent=false;
-    function notifyPrintReady(){if(readySent)return;readySent=true;shrinkKatexToFit();requestAnimationFrame(function(){try{parent.postMessage('pdf-iframe-ready','*')}catch(e){}})}
-    fitPagesToScreen(); window.addEventListener('resize',function(){requestAnimationFrame(fitPagesToScreen)}); window.addEventListener('orientationchange',function(){requestAnimationFrame(fitPagesToScreen)});
-    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(notifyPrintReady).catch(notifyPrintReady); else window.addEventListener('load',notifyPrintReady);
-    window.addEventListener('load',notifyPrintReady,{once:true});
+    var readySent = false;
+    function notifyPrintReady(){
+      if (readySent) return;
+      readySent = true;
+      shrinkKatexToFit();
+      fitPagesToScreen();
+      try { parent.postMessage('pdf-iframe-ready', '*'); } catch(e) {}
+    }
+    fitPagesToScreen();
+    window.addEventListener('resize', function(){ requestAnimationFrame(fitPagesToScreen); });
+    window.addEventListener('orientationchange', function(){ setTimeout(fitPagesToScreen, 200); });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(notifyPrintReady).catch(notifyPrintReady);
+    } else {
+      window.addEventListener('load', notifyPrintReady, { once: true });
+    }
+    notifyPrintReady();
   <\/script></body></html>`;
 }
 
@@ -1074,6 +1143,14 @@ function switchPreviewTab(tabName) {
     if (docView) docView.style.display = 'none';
     if (toolbar) toolbar.style.display = 'none';
     if (pdfView) pdfView.style.display = 'flex';
+    // Show loading indicator before generating preview
+    const loadingEl = document.getElementById('pdf-preview-loading');
+    if (loadingEl) {
+      loadingEl.style.display = 'flex';
+      loadingEl.classList.add('active');
+      const statusEl = document.getElementById('pdf-preview-loading-status');
+      if (statusEl) statusEl.textContent = '📄 Loading PDF preview...';
+    }
     if (typeof generateLivePDFIframePreview === 'function') generateLivePDFIframePreview();
   }
 }
@@ -1388,7 +1465,9 @@ async function splitChildFlowElement(node, currentPage, createPage) {
     }
   }
   return { page, didSplit };
-  // ============================================================
+}
+
+// ============================================================
 // WINDOW EXPOSURE – PDF Export
 // ============================================================
 window.exportToHighQualityPDF = exportToHighQualityPDF;
@@ -1396,4 +1475,26 @@ window.exportToImagePDF = exportToImagePDF;
 window.exportToWordDocument = exportToWordDocument;
 window.generateLivePDFIframePreview = generateLivePDFIframePreview;
 window.invalidatePDFPreviewCache = invalidatePDFPreviewCache;
-}
+window.buildUnifiedPDFPreviewDocument = buildUnifiedPDFPreviewDocument;
+window.computeTruePDFPages = computeTruePDFPages;
+window.disposeTruePDFPages = disposeTruePDFPages;
+window.computeTruePDFPageChunks = computeTruePDFPageChunks;
+window.createPDFMeasurePage = createPDFMeasurePage;
+window.pageFits = pageFits;
+window.applyLocalMarginSafetyFixes = applyLocalMarginSafetyFixes;
+window.switchPreviewTab = switchPreviewTab;
+window.waitForPDFLayoutStable = waitForPDFLayoutStable;
+window.nextFrame = nextFrame;
+window.waitForImagesToLoad = waitForImagesToLoad;
+window.autoFitPageWithinMargins = autoFitPageWithinMargins;
+window.shrinkPageToFit = shrinkPageToFit;
+window.ensurePageFitWrapper = ensurePageFitWrapper;
+window.splitOversizedTableToFit = splitOversizedTableToFit;
+window.appendNodeWithPagination = appendNodeWithPagination;
+window.pageHasContent = pageHasContent;
+window.appendClone = appendClone;
+window.cloneElementShell = cloneElementShell;
+window.splitPlainTextElement = splitPlainTextElement;
+window.splitListElement = splitListElement;
+window.splitQuizContainer = splitQuizContainer;
+window.splitChildFlowElement = splitChildFlowElement;
