@@ -1268,8 +1268,7 @@ function isDiagramEditRequest(promptText, intentPayload) {
     !!(intentPayload && ['edit', 'refine'].includes(intentPayload.intent));
 }
 
-// ===== BEAUTIFY =====
-// Single-pass only (no batch splitting). High output budget + auto-continue.
+// ===== BEAUTIFY HELPERS (local no-AI polish) =====
 function textContentLengthFromHTML(html) {
   const t = document.createElement('div');
   t.innerHTML = html || '';
@@ -1310,7 +1309,6 @@ function extractBeautifyHtmlFromAIResponse(rawContent) {
   return '';
 }
 
-/** Local (no-AI) structural polish so Beautify always does something useful. */
 function localBeautifyHTML(rawHtml) {
   if (!rawHtml) return '';
   const temp = document.createElement('div');
@@ -1369,7 +1367,6 @@ function getBeautifySourceHTML() {
 }
 
 function getBeautifyMaxTokens() {
-  // Prefer the largest practical single-shot budget — no artificial beautify cap
   if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.PDF_TOKEN_BUDGETS) {
     const b = APP_CONFIG.PDF_TOKEN_BUDGETS;
     return b.LONG_DIRECT || b.DEFAULT_SINGLE || b.BEAUTIFY || 64000;
@@ -1386,6 +1383,104 @@ function detectOutputLanguage(promptText) {
   return bengaliChars > latinChars ? 'bn' : 'en';
 }
 
+// ===== DETECT BROKEN PAGES (new) =====
+function getBrokenPages() {
+  const container = document.getElementById('document-view-container');
+  if (!container) return [];
+  const pages = Array.from(container.querySelectorAll('.doc-page-canvas'));
+  const brokenIndices = [];
+  pages.forEach((page, index) => {
+    // Check for broken equations
+    const brokenEquations = typeof findBrokenEquations === 'function' ? findBrokenEquations(page) : [];
+    const hasBrokenKatex = page.querySelectorAll('.katex-eq.katex-render-failed, .katex-eq[data-render-pending="true"]').length > 0;
+    // Also check for empty pages (optional)
+    const text = page.innerText.trim();
+    const isEmpty = !text && !page.querySelector('img,svg,table,canvas');
+    if (brokenEquations.length > 0 || hasBrokenKatex || isEmpty) {
+      brokenIndices.push(index);
+    }
+  });
+  return brokenIndices;
+}
+
+// ===== FIX BROKEN PAGES WITH AI (new) =====
+async function fixBrokenPagesWithAI(pageIndices, modelsUsedSet) {
+  const container = document.getElementById('document-view-container');
+  if (!container || !pageIndices.length) return false;
+  const pages = Array.from(container.querySelectorAll('.doc-page-canvas'));
+  const totalPages = pages.length;
+
+  // Prepare page HTML for each broken page
+  const pageData = pageIndices.map(idx => {
+    const page = pages[idx];
+    // Remove footer before sending
+    const clone = page.cloneNode(true);
+    clone.querySelectorAll('.page-footer-number').forEach(f => f.remove());
+    return { index: idx, html: clone.innerHTML, originalPage: page };
+  });
+
+  const prompt =
+    `You are an expert LaTeX/KaTeX error fixer. The following are specific pages from a document that contain rendering errors (failed equations, malformed LaTeX, or empty content). 
+Your task is to correct ONLY the LaTeX/KaTeX syntax and ensure all equations render properly. 
+Preserve ALL other content, text, structure, and formatting exactly as-is. Do not add, remove, or modify any non-LaTeX content.
+For each page, return the corrected HTML. 
+Output MUST be a JSON array where each element has "page_index" (0-based index) and "fixed_html" (the corrected HTML fragment for that page).
+Example: [{"page_index":0,"fixed_html":"<p>Corrected content...</p>"}]
+Return ONLY the JSON array, no other text.`;
+
+  // Build user message with each page's HTML
+  let userContent = `Fix the following pages:\n\n`;
+  pageData.forEach(({ index, html }) => {
+    userContent += `--- PAGE ${index + 1} (index ${index}) ---\n${html}\n\n`;
+  });
+
+  try {
+    const result = await callAIAPI([
+      { role: 'system', content: prompt },
+      { role: 'user', content: userContent }
+    ], { forceJson: true, modelsUsedSet: modelsUsedSet });
+
+    const parsed = safeParseAIJson(result.content, null);
+    if (!parsed || !Array.isArray(parsed)) {
+      console.warn('AI response for fixBrokenPages was not a valid JSON array.');
+      return false;
+    }
+
+    // Apply fixes
+    let applied = 0;
+    for (const item of parsed) {
+      const idx = parseInt(item.page_index, 10);
+      if (isNaN(idx) || idx < 0 || idx >= pages.length) continue;
+      const fixedHtml = item.fixed_html;
+      if (typeof fixedHtml !== 'string' || !fixedHtml.trim()) continue;
+
+      // Use updateSpecificPageByNumber to replace content
+      const pageNum = idx + 1;
+      const success = updateSpecificPageByNumber(pageNum, fixedHtml);
+      if (success) applied++;
+    }
+
+    if (applied > 0) {
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification(`✅ Fixed ${applied} page(s) with AI.`);
+      }
+      return true;
+    } else {
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification('⚠️ AI could not fix any broken pages.');
+      }
+      return false;
+    }
+  } catch (error) {
+    console.error('fixBrokenPagesWithAI error:', error);
+    if (typeof displayToastNotification === 'function') {
+      displayToastNotification('Error fixing pages: ' + (error.message || 'unknown'));
+    }
+    return false;
+  }
+}
+
+// ===== BEAUTIFY DOCUMENT (MODIFIED with incremental fix) =====
 async function beautifyDocument(options = {}) {
   const currentFullHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
   if (!currentFullHTML || currentFullHTML.includes('Start typing here')) {
@@ -1407,8 +1502,6 @@ async function beautifyDocument(options = {}) {
   const sendBtn = document.getElementById('send-message-btn');
   if (sendBtn) sendBtn.disabled = true;
   const isMonochromeMode = document.body.classList.contains('photocopy-mode');
-  const sourceForAI = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : currentFullHTML;
-  const outputLanguage = detectOutputLanguage(sourceForAI || currentFullHTML);
   const modelsUsed = new Set();
 
   const applyResult = (html, toastMsg, chatMsg) => {
@@ -1422,18 +1515,86 @@ async function beautifyDocument(options = {}) {
     if (chatMsg && typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', chatMsg);
   };
 
-  // LOCAL-ONLY PATH (no model)
+  // --- NEW: Detect broken pages ---
+  const brokenIndices = getBrokenPages();
+  const totalPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
+
+  // If there are broken pages and we have AI, fix them first (targeted)
+  if (hasAIModel && brokenIndices.length > 0) {
+    if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
+      ProgressUI.show('Fixing broken pages...', `Detected ${brokenIndices.length} page(s) with rendering issues.`);
+      ProgressUI.startAutoEstimate(8);
+    }
+    const fixed = await fixBrokenPagesWithAI(brokenIndices, modelsUsed);
+    if (fixed) {
+      // After fixing broken pages, optionally apply local beautify (no AI) to polish structure
+      const afterFixHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
+      if (afterFixHTML) {
+        const localPolished = localBeautifyHTML(afterFixHTML);
+        if (localPolished && localPolished !== afterFixHTML) {
+          if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+          if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(localPolished, false);
+        }
+      }
+      if (typeof ProgressUI !== 'undefined') ProgressUI.finish();
+      setTimeout(() => { if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide(); }, 300);
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification('✅ Fixed broken pages and applied local polish.');
+      }
+      if (typeof appendChatMessageToUI === 'function') {
+        appendChatMessageToUI('ai', `✅ Fixed ${brokenIndices.length} page(s) with rendering issues and polished locally.`);
+      }
+      window.APP_STATE.isAIGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
+      return;
+    } else {
+      // If fixing failed, fallback to local beautify only
+      if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
+      const localPolished = localBeautifyHTML(currentFullHTML);
+      if (localPolished && localPolished !== currentFullHTML) {
+        if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+        if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(localPolished, false);
+        if (typeof displayToastNotification === 'function') {
+          displayToastNotification('✅ Applied local polish (AI fix failed).');
+        }
+        if (typeof appendChatMessageToUI === 'function') {
+          appendChatMessageToUI('ai', '⚠️ AI fix failed; applied local polish only.');
+        }
+      } else {
+        if (typeof displayToastNotification === 'function') {
+          displayToastNotification('⚠️ No changes made – broken pages could not be fixed.');
+        }
+      }
+      window.APP_STATE.isAIGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
+      return;
+    }
+  }
+
+  // ---- If no broken pages, do original full beautify (or local only) ----
+  // If no AI model, do local beautify
   if (!hasAIModel) {
     try {
       if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
         ProgressUI.show('Beautifying…', 'Local formatting (no AI model configured)…');
         ProgressUI.startAutoEstimate(3);
       }
-      applyResult(
-        localBeautifyHTML(currentFullHTML) || currentFullHTML,
-        '✅ Local beautify applied. Add an AI model for richer formatting.',
-        '✅ Document polished locally (no AI model configured).'
-      );
+      const polished = localBeautifyHTML(currentFullHTML) || currentFullHTML;
+      if (polished !== currentFullHTML) {
+        if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+        if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(polished, false);
+        if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+        if (typeof displayToastNotification === 'function') {
+          displayToastNotification('✅ Local beautify applied.');
+        }
+        if (typeof appendChatMessageToUI === 'function') {
+          appendChatMessageToUI('ai', '✅ Document polished locally.');
+        }
+      } else {
+        if (typeof displayToastNotification === 'function') {
+          displayToastNotification('ℹ Document already looks good.');
+        }
+      }
     } catch (localErr) {
       if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
       if (typeof displayToastNotification === 'function') {
@@ -1446,6 +1607,9 @@ async function beautifyDocument(options = {}) {
     return;
   }
 
+  // ---- Full AI beautify (original behavior) ----
+  const sourceForAI = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : currentFullHTML;
+  const outputLanguage = detectOutputLanguage(sourceForAI || currentFullHTML);
   const source = getBeautifySourceHTML() || sourceForAI || currentFullHTML;
   const maxTokens = getBeautifyMaxTokens();
 
@@ -1478,7 +1642,6 @@ async function beautifyDocument(options = {}) {
 
     let html = extractBeautifyHtmlFromAIResponse(result.content);
 
-    // Auto-continue if the model hit the output limit mid-document
     if (result.finishReason === 'length' && html && typeof generateHtmlContentWithAutoContinue === 'function') {
       try {
         if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) {
@@ -1847,3 +2010,5 @@ window.getExistingHeadings = getExistingHeadings;
 window.getPageRangeContext = getPageRangeContext;
 window.getMultiPageEditContext = getMultiPageEditContext;
 window.detectRequestedPageNumber = detectRequestedPageNumber;
+window.getBrokenPages = getBrokenPages;
+window.fixBrokenPagesWithAI = fixBrokenPagesWithAI;
