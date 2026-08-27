@@ -1,3 +1,4 @@
+
 // ========================================================================
 // DOCUMENT EDITOR - History, Pagination, Page Management, and Core Editing
 // ========================================================================
@@ -1471,10 +1472,64 @@ function applyMonochromeDocumentStyles() {
   });
 
   if (typeof enforceDiagramVisualStyles === 'function') enforceDiagramVisualStyles(docContainer);
+}
+
+// ===== PDF VISUAL FORMAT (background/color theme applied to exported/canvas pages) =====
+const PDF_VISUAL_FORMAT_IDS = ['default', 'aurora', 'editorial', 'midnight', 'blueprint', 'sage'];
+const PDF_TEXT_FORMAT_IDS = ['default', 'academic', 'modern', 'compact'];
+
+function getActivePDFVisualFormat() {
+  return (window.APP_STATE && window.APP_STATE.pdfVisualFormat) ||
+    (function() { try { return localStorage.getItem(PDF_VISUAL_FORMAT_KEY) || 'default'; } catch (e) { return 'default'; } })();
+}
+
+function getActivePDFTextFormat() {
+  return (window.APP_STATE && window.APP_STATE.pdfTextFormat) ||
+    (function() { try { return localStorage.getItem(PDF_TEXT_FORMAT_KEY) || 'default'; } catch (e) { return 'default'; } })();
+}
+
+function applyPDFVisualFormat(formatId) {
+  const id = PDF_VISUAL_FORMAT_IDS.includes(formatId) ? formatId : 'default';
+  if (!docContainer) return;
+  docContainer.querySelectorAll('.doc-page-canvas').forEach(page => {
+    PDF_VISUAL_FORMAT_IDS.forEach(f => page.classList.remove('pdf-format-' + f));
+    if (id !== 'default') page.classList.add('pdf-format-' + id);
+  });
+  if (window.APP_STATE) window.APP_STATE.pdfVisualFormat = id;
+  try { localStorage.setItem(PDF_VISUAL_FORMAT_KEY, id); } catch (e) {}
+}
+
+function applyPDFTextFormat(formatId) {
+  const id = PDF_TEXT_FORMAT_IDS.includes(formatId) ? formatId : 'default';
+  if (!docContainer) return;
+  docContainer.querySelectorAll('.doc-page-canvas').forEach(page => {
+    PDF_TEXT_FORMAT_IDS.forEach(f => page.classList.remove('text-format-' + f));
+    if (id !== 'default') page.classList.add('text-format-' + id);
+  });
+  if (window.APP_STATE) window.APP_STATE.pdfTextFormat = id;
+  try { localStorage.setItem(PDF_TEXT_FORMAT_KEY, id); } catch (e) {}
+}
+
+function choosePDFVisualFormat(formatId) {
+  applyPDFVisualFormat(formatId);
+  if (typeof TAB_MANAGER !== 'undefined' && TAB_MANAGER._persist) TAB_MANAGER._persist();
+  if (typeof closeAtCommandMenu === 'function') closeAtCommandMenu();
+  if (typeof displayToastNotification === 'function') displayToastNotification('✅ Visual format applied');
+}
+
+function choosePDFTextFormat(formatId) {
+  applyPDFTextFormat(formatId);
+  if (typeof TAB_MANAGER !== 'undefined' && TAB_MANAGER._persist) TAB_MANAGER._persist();
+  if (typeof closeAtCommandMenu === 'function') closeAtCommandMenu();
+  if (typeof displayToastNotification === 'function') displayToastNotification('✅ Text format applied');
+}
+
 // ============================================================
 // WINDOW EXPOSURE – Document Editor
 // ============================================================
-window.switchPreviewTab = switchPreviewTab;
+// Note: switchPreviewTab is defined in pdf-export.js (loaded after this file) —
+// its own top-level `function` declaration attaches it to window automatically,
+// so it must not be re-exported here (that would throw before pdf-export.js loads).
 window.executeEditorCommand = executeEditorCommand;
 window.paginateDocumentCanvas = paginateDocumentCanvas;
 window.beautifyDocument = beautifyDocument;
@@ -1507,4 +1562,3 @@ window.getExistingHeadings = getExistingHeadings;
 window.getPageRangeContext = getPageRangeContext;
 window.getMultiPageEditContext = getMultiPageEditContext;
 window.detectRequestedPageNumber = detectRequestedPageNumber;
-}
