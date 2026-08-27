@@ -235,34 +235,6 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
       continue;
     }
 
-    // --- Special handling for exam/quiz blocks ---
-    if (node.nodeType === Node.ELEMENT_NODE && node.classList) {
-      // If it's a quiz-container, exam-header-block, or omr-sheet-page, keep them together as much as possible
-      if (node.classList.contains('quiz-container') || node.classList.contains('exam-header-block') || node.classList.contains('omr-sheet-page')) {
-        // Check if the entire block fits
-        if (contentFits(currentPageElement, node)) {
-          const clone = node.cloneNode(true);
-          currentPageElement.appendChild(clone);
-          if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
-          if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
-          continue;
-        } else {
-          // If it doesn't fit, start a new page and try again
-          if (pageHasContent(currentPageElement)) {
-            currentPageElement = createNewPageElement();
-            createdPages.push(currentPageElement);
-          }
-          // If it still doesn't fit on a fresh page, we have no choice but to place it
-          // (this should rarely happen, but we handle it gracefully)
-          const clone = node.cloneNode(true);
-          currentPageElement.appendChild(clone);
-          if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
-          if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
-          continue;
-        }
-      }
-    }
-
     // Check if the node fits in the current page
     if (contentFits(currentPageElement, node)) {
       // It fits, add it
@@ -340,6 +312,10 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
       }
     }
+
+    // After adding, check if the page overflowed due to tall content (like a table or image)
+    // and if so, we may need to move some content to the next page.
+    // But we already checked with contentFits, so it should be okay.
   }
 
   // Clean up measurement page
@@ -990,7 +966,7 @@ function getMultiPageEditContext(pageNumbers) {
   return { contextString, totalPages, targetPages: nums };
 }
 
-// ===== EXAM FINALIZATION =====
+// ===== EXAM FINALIZATION (IMPROVED) =====
 function buildExamHeaderBlockHTML(subjectGuess) {
   const title = (subjectGuess || 'Examination').trim();
   return `<div class="exam-header-block" contenteditable="true">` +
@@ -1540,7 +1516,7 @@ async function beautifyDocument(options = {}) {
     if (chatMsg && typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', chatMsg);
   };
 
-  // --- NEW: Detect broken pages ---
+  // --- Detect broken pages ---
   const brokenIndices = getBrokenPages();
   const totalPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
 
