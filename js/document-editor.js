@@ -1,4 +1,3 @@
-
 // ========================================================================
 // DOCUMENT EDITOR - History, Pagination, Page Management, and Core Editing
 // ========================================================================
@@ -176,75 +175,153 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
   const createdPages = [currentPage];
   const topLevelNodes = flattenContentTopLevelNodes(tempSource);
 
+  // --- Pagination logic with proper spacing ---
+  // We use a temporary offscreen page to measure content height accurately.
+  // The page has fixed A4 dimensions with proper padding.
+  // We also account for margin/padding of child elements to avoid unnecessary page breaks.
+
+  const measurePage = document.createElement('div');
+  measurePage.className = 'doc-page-canvas pdf-export-measure-page';
+  measurePage.style.position = 'absolute';
+  measurePage.style.left = '-9999px';
+  measurePage.style.top = '0';
+  measurePage.style.width = EDITOR_A4_WIDTH + 'px';
+  measurePage.style.height = EDITOR_A4_HEIGHT + 'px';
+  measurePage.style.padding = `${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px`;
+  measurePage.style.boxSizing = 'border-box';
+  measurePage.style.overflow = 'hidden';
+  measurePage.style.visibility = 'hidden';
+  measurePage.style.pointerEvents = 'none';
+  document.body.appendChild(measurePage);
+
+  // Helper to check if content fits in a page
+  function contentFits(pageElement, extraNode) {
+    // Clone the page content and add the extra node, then measure
+    const clone = pageElement.cloneNode(true);
+    // Remove footer if any
+    const footer = clone.querySelector('.page-footer-number');
+    if (footer) footer.remove();
+    // Append the extra node
+    if (extraNode) {
+      clone.appendChild(extraNode.cloneNode(true));
+    }
+    // Reset measurement page and copy content
+    measurePage.innerHTML = '';
+    // Copy all children except footer
+    Array.from(clone.childNodes).forEach(child => {
+      if (!child.classList || !child.classList.contains('page-footer-number')) {
+        measurePage.appendChild(child.cloneNode(true));
+      }
+    });
+    // Force layout
+    measurePage.style.display = 'block';
+    void measurePage.offsetHeight;
+    const fits = measurePage.scrollHeight <= EDITOR_A4_HEIGHT + 1;
+    measurePage.style.display = '';
+    measurePage.innerHTML = '';
+    return fits;
+  }
+
+  // Main pagination loop
+  let currentPageElement = currentPage;
   for (let i = 0; i < topLevelNodes.length; i++) {
     const node = topLevelNodes[i];
     if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) continue;
     if (node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains('manual-page-break')) {
-      if (currentPage.childNodes.length > 0) {
-        currentPage = createNewPageElement();
-        createdPages.push(currentPage);
+      if (currentPageElement.childNodes.length > 0) {
+        currentPageElement = createNewPageElement();
+        createdPages.push(currentPageElement);
       }
       continue;
     }
-    let clone = node.nodeType === Node.TEXT_NODE ?
-      Object.assign(document.createElement('span'), { textContent: node.textContent }) :
-      node.cloneNode(true);
 
-    if (document.body.classList.contains('exam-document') &&
-      clone.nodeType === Node.ELEMENT_NODE && clone.classList.contains('quiz-container')) {
-      const quizItems = Array.from(clone.children).filter(el => el.classList && el.classList.contains('quiz-item'));
-      const tailNodes = Array.from(clone.childNodes).filter(n => !(n.nodeType === Node.ELEMENT_NODE && n.classList.contains('quiz-item')));
-      currentPage.appendChild(clone);
-      clone.innerHTML = '';
-      for (const item of quizItems) {
-        const itemClone = item.cloneNode(true);
-        clone.appendChild(itemClone);
-        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
-        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
-        if (currentPage.scrollHeight > (EDITOR_A4_CONTENT_HEIGHT - 18)) {
-          clone.removeChild(itemClone);
-          const hasOtherPageContent = Array.from(currentPage.children).some(el =>
-            el !== clone && !el.classList.contains('page-footer-number')
-          );
-          if (hasOtherPageContent || clone.children.length > 0 || clone.textContent.trim()) {
-            currentPage = createNewPageElement();
-            const nextQuiz = document.createElement('div');
-            nextQuiz.className = 'quiz-container';
-            currentPage.appendChild(nextQuiz);
-            clone = nextQuiz;
-          }
-          clone.appendChild(itemClone);
-          if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
-          if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
+    // Check if the node fits in the current page
+    if (contentFits(currentPageElement, node)) {
+      // It fits, add it
+      const clone = node.cloneNode(true);
+      currentPageElement.appendChild(clone);
+      if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
+      if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
+    } else {
+      // It doesn't fit. If the current page is empty or only has a footer, we still need to place it.
+      // But if there is any content, we start a new page.
+      const hasContent = Array.from(currentPageElement.childNodes).some(n => {
+        if (n.nodeType === Node.TEXT_NODE) return n.textContent.trim().length > 0;
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          if (n.classList && n.classList.contains('page-footer-number')) return false;
+          return true;
         }
-      }
-      for (const tail of tailNodes) {
-        clone.appendChild(tail.cloneNode(true));
-      }
-      continue;
-    }
+        return false;
+      });
 
-    currentPage.appendChild(clone);
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
-    if (clone && typeof clone.querySelectorAll === 'function' && typeof renderAllKatexVisuals === 'function') {
-      renderAllKatexVisuals(clone);
-    }
+      if (hasContent) {
+        // Try to split the node if it's a block element (like a paragraph, heading, list, table, etc.)
+        // For simple text nodes or inline elements, we may need to split differently.
+        if (node.nodeType === Node.ELEMENT_NODE && node.children.length === 0 && node.textContent.trim().length > 0) {
+          // This is a text-only element (like a paragraph). We can split by words.
+          const words = node.textContent.trim().split(/\s+/);
+          if (words.length > 1) {
+            // Find how many words fit on the current page
+            let fitWords = 0;
+            let testText = '';
+            for (let w = 0; w < words.length; w++) {
+              const testClone = node.cloneNode(false);
+              testClone.textContent = (testText ? testText + ' ' : '') + words[w];
+              if (contentFits(currentPageElement, testClone)) {
+                testText = (testText ? testText + ' ' : '') + words[w];
+                fitWords++;
+              } else {
+                break;
+              }
+            }
+            if (fitWords > 0 && fitWords < words.length) {
+              // Put the fitting words on current page
+              const fitPart = node.cloneNode(false);
+              fitPart.textContent = testText;
+              currentPageElement.appendChild(fitPart);
+              if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(fitPart);
+              if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(fitPart);
 
-    if (currentPage.scrollHeight > EDITOR_A4_CONTENT_HEIGHT + 58) {
-      const hasOtherContent = currentPage.childNodes.length > 1;
-      if (hasOtherContent) {
-        currentPage.removeChild(clone);
-        currentPage = createNewPageElement();
-        createdPages.push(currentPage);
-        currentPage.appendChild(clone);
-      }
-      if (currentPage.scrollHeight > EDITOR_A4_HEIGHT + 1) {
-        tightenPageContentToA4(currentPage);
+              // Remaining words go to a new page
+              const remainingText = words.slice(fitWords).join(' ');
+              const remainingPart = node.cloneNode(false);
+              remainingPart.textContent = remainingText;
+              // Start a new page
+              currentPageElement = createNewPageElement();
+              createdPages.push(currentPageElement);
+              currentPageElement.appendChild(remainingPart);
+              if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(remainingPart);
+              if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(remainingPart);
+              continue;
+            }
+          }
+        }
+
+        // If we cannot split, start a new page and put the whole node there.
+        currentPageElement = createNewPageElement();
+        createdPages.push(currentPageElement);
+        const clone = node.cloneNode(true);
+        currentPageElement.appendChild(clone);
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
       } else {
-        resetPageToA4(currentPage);
+        // Current page is empty, just place the node.
+        const clone = node.cloneNode(true);
+        currentPageElement.appendChild(clone);
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
       }
     }
+
+    // After adding, check if the page overflowed due to tall content (like a table or image)
+    // and if so, we may need to move some content to the next page.
+    // But we already checked with contentFits, so it should be okay.
   }
+
+  // Clean up measurement page
+  document.body.removeChild(measurePage);
+
+  // Ensure all pages are properly sized and have footers
   normalizeAllEditorPagesToA4();
   docContainer.scrollTop = savedScrollPos;
   restoreCaretPosition(markerId);
@@ -333,6 +410,7 @@ function reflowDocument() {
         const fragment = document.createDocumentFragment();
         overflow.forEach(node => fragment.appendChild(node));
         newPage.prepend(fragment);
+        // Recheck the same page index because we inserted a new page
         continue;
       }
     }
@@ -345,10 +423,17 @@ function reflowDocument() {
 }
 
 function getOverflowNodes(page) {
+  // We need to find nodes that overflow the page height.
+  // Use a more accurate method: temporarily remove footer, measure.
   const maxHeight = 1123;
   const children = Array.from(page.childNodes);
   const footer = page.querySelector('.page-footer-number');
   const childrenWithoutFooter = children.filter(c => c !== footer);
+
+  // If there's only footer or no content, return empty.
+  if (childrenWithoutFooter.length === 0) return [];
+
+  // Clone the page to measure without mutating the DOM
   const clonePage = page.cloneNode(true);
   clonePage.style.position = 'absolute';
   clonePage.style.left = '-9999px';
@@ -369,6 +454,7 @@ function getOverflowNodes(page) {
     removeCount++;
   }
   document.body.removeChild(clonePage);
+
   if (removeCount > 0) {
     const pageChildren = Array.from(page.childNodes).filter(c => c !== footer);
     const overflow = pageChildren.slice(-removeCount);
