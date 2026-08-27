@@ -1207,7 +1207,7 @@ function applyLocalMarginSafetyFixes(result) {
   }
 }
 
-// ===== SWITCH PREVIEW TAB =====
+// ===== SWITCH PREVIEW TAB (IMPROVED FOR MOBILE) =====
 function switchPreviewTab(tabName) {
   const docView = document.getElementById('document-view-container');
   const pdfView = document.getElementById('pdf-view-container');
@@ -1231,8 +1231,13 @@ function switchPreviewTab(tabName) {
     // interrupted export, so it can never show up floating over the editor.
     const strayHost = document.getElementById('image-pdf-render-host');
     if (strayHost && strayHost.parentNode) strayHost.parentNode.removeChild(strayHost);
+    // Schedule multiple fits to ensure scaling after layout
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); });
+      requestAnimationFrame(() => {
+        if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
+        setTimeout(() => { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); }, 150);
+        setTimeout(() => { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); }, 400);
+      });
     }
   } else {
     if (docView) docView.style.display = 'none';
@@ -1268,6 +1273,9 @@ function switchPreviewTab(tabName) {
     // made visible. Re-trigger the in-iframe fit once we know the panel is
     // actually laid out, so mobile never gets stuck showing an un-scaled page.
     _refitPDFIframeSoon();
+    // Also refit after a delay to catch any late layout changes
+    setTimeout(_refitPDFIframeSoon, 300);
+    setTimeout(_refitPDFIframeSoon, 700);
   }
 }
 
