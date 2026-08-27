@@ -552,14 +552,22 @@ function updatePageFooters() {
   if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
 }
 
-// ===== FIT EDITOR PAGES TO SCREEN =====
+// ===== FIT EDITOR PAGES TO SCREEN (IMPROVED FOR MOBILE) =====
+let _fitEditorTimer = null;
+
+function scheduleFitEditor() {
+  clearTimeout(_fitEditorTimer);
+  _fitEditorTimer = setTimeout(() => {
+    try { fitEditorPagesToScreen(); } catch (_) {}
+  }, 80);
+}
+
 function fitEditorPagesToScreen() {
   if (!docContainer) return;
   const pages = Array.from(docContainer.querySelectorAll('.doc-page-canvas'));
   if (!pages.length) return;
 
-  const narrowByWidth = window.innerWidth <= 850 || (document.documentElement.clientWidth || 0) <= 850;
-  const isNarrow = narrowByWidth; // width-only: more reliable than pointer media queries
+  const isNarrow = window.innerWidth <= 850 || (document.documentElement.clientWidth || 0) <= 850;
 
   if (!isNarrow) {
     pages.forEach(p => {
@@ -581,13 +589,15 @@ function fitEditorPagesToScreen() {
     return;
   }
 
+  // ---- Mobile narrow layout ----
   docContainer.style.alignItems = 'flex-start';
   docContainer.style.overflowX = 'hidden';
   docContainer.style.width = '100%';
 
-  const rect = docContainer.getBoundingClientRect();
-  const containerWidth = Math.max(1, Math.floor(rect.width || docContainer.clientWidth || window.innerWidth || 360));
+  // Get the actual container width (clientWidth is more reliable)
+  const containerWidth = Math.max(1, docContainer.clientWidth || window.innerWidth || 360);
   const available = Math.max(1, containerWidth - 4);
+  // Scale factor: keep it between 0.48 and 1.0
   const scale = Math.min(1, Math.max(0.48, available / EDITOR_A4_WIDTH));
 
   const scaledW = EDITOR_A4_WIDTH * scale;
@@ -595,8 +605,7 @@ function fitEditorPagesToScreen() {
   const offsetX = Math.max(0, Math.round((containerWidth - scaledW) / 2));
   const gap = Math.max(12, Math.round(16 * scale));
 
-  // Layout compensation so the flow box matches the visual scaled size:
-  // width 794 + marginRight (794*(scale-1)) => layout width ≈ scaledW
+  // marginRight compensation so the layout width matches the scaled visual width
   const marginRightComp = Math.round(EDITOR_A4_WIDTH * (scale - 1));
   const marginBottomComp = Math.round(EDITOR_A4_HEIGHT * (scale - 1) + gap);
 
@@ -618,64 +627,45 @@ function fitEditorPagesToScreen() {
   docContainer.style.setProperty('--editor-page-scale', String(scale));
 }
 
-if (!window.__editorPageFitResizeBound) {
-  window.__editorPageFitResizeBound = true;
-  let _fitTimer = null;
-  const scheduleFit = () => {
-    clearTimeout(_fitTimer);
-    _fitTimer = setTimeout(() => {
-      try { fitEditorPagesToScreen(); } catch (_) {}
-    }, 50);
-  };
-  window.addEventListener('resize', scheduleFit, { passive: true });
-  window.addEventListener('orientationchange', () => setTimeout(scheduleFit, 160), { passive: true });
+// ---- Attach resize and visibility observers ----
+if (!window.__editorFitResizeBound) {
+  window.__editorFitResizeBound = true;
+  window.addEventListener('resize', scheduleFitEditor, { passive: true });
+  window.addEventListener('orientationchange', () => { setTimeout(scheduleFitEditor, 200); }, { passive: true });
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', scheduleFit, { passive: true });
+    window.visualViewport.addEventListener('resize', scheduleFitEditor, { passive: true });
+    window.visualViewport.addEventListener('scroll', scheduleFitEditor, { passive: true });
   }
-  document.addEventListener('click', (e) => {
-    const t = e.target;
-    if (!t || !t.closest) return;
-    if (t.closest('#mob-btn-editor, #tab-editor-btn, #tab-editor-btn-desktop, #mob-btn-pdf, #tab-pdf-btn')) {
-      setTimeout(scheduleFit, 80);
-      setTimeout(scheduleFit, 300);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      setTimeout(scheduleFitEditor, 150);
     }
-  }, true);
+  }, { passive: true });
 
-  // ---- Robustness net -----------------------------------------------------
-  // A plain 'resize' event does NOT fire when a hidden mobile panel (the
-  // Editor/PDF tab) is switched to visible via display:none -> display:flex.
-  // That let the A4 page get stuck at its un-scaled 794px width on first
-  // view, so on narrow screens only a slice of the page was visible.
-  // A ResizeObserver on the container catches every real size change,
-  // including becoming visible for the first time or the sidebar collapsing.
+  // Use ResizeObserver on the container to catch layout changes
   if (docContainer && typeof ResizeObserver === 'function') {
     let _lastObservedW = 0;
     const ro = new ResizeObserver((entries) => {
       const w = Math.round((entries[0] && entries[0].contentRect && entries[0].contentRect.width) || 0);
       if (w > 0 && w !== _lastObservedW) {
         _lastObservedW = w;
-        scheduleFit();
+        scheduleFitEditor();
       }
     });
     ro.observe(docContainer);
     if (docContainer.parentElement) ro.observe(docContainer.parentElement);
   }
 
-  // Also re-fit shortly after new page content is added (covers pagination
-  // / regeneration paths that don't already call updatePageFooters()).
+  // MutationObserver to catch new pages added
   if (docContainer && typeof MutationObserver === 'function') {
-    const mo = new MutationObserver(() => scheduleFit());
-    mo.observe(docContainer, { childList: true });
+    const mo = new MutationObserver(() => scheduleFitEditor());
+    mo.observe(docContainer, { childList: true, subtree: true });
   }
 
-  // Guarantee at least one fit pass as soon as this script runs, plus a few
-  // follow-up passes to catch late layout/visibility changes on first load.
-  scheduleFit();
-  setTimeout(scheduleFit, 300);
-  setTimeout(scheduleFit, 1000);
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', scheduleFit);
-  }
+  // Initial fit and a few extra passes
+  setTimeout(scheduleFitEditor, 50);
+  setTimeout(scheduleFitEditor, 300);
+  setTimeout(scheduleFitEditor, 1000);
 }
 
 // ===== UPDATE PAGE BY NUMBER =====
