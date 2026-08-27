@@ -1273,18 +1273,35 @@ async function beautifyDocument(options = {}) {
     return;
   }
 
+  // Check if AI models are available
+  if (typeof getActiveAIModel === 'function') {
+    const activeModel = getActiveAIModel();
+    if (!activeModel) {
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification("⚠️ No AI model configured. Please add a model in AI Models first.");
+      }
+      return;
+    }
+  } else {
+    if (typeof displayToastNotification === 'function') {
+      displayToastNotification("⚠️ AI model system not available. Please refresh the page.");
+    }
+    return;
+  }
+
   const requestSessionId = window.APP_STATE?.activeSessionId;
   if (window.APP_STATE) window.APP_STATE.isAIGenerating = true;
   const sendBtn = document.getElementById('send-message-btn');
   if (sendBtn) sendBtn.disabled = true;
   const isMonochromeMode = document.body.classList.contains('photocopy-mode');
   const sourceForAI = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : '';
-  const outputLanguage = detectOutputLanguage(sourceForAI);
+  const outputLanguage = detectOutputLanguage(sourceForAI || currentFullHTML);
   const batches = getBeautifySourceBatches(50000, 12);
   const modelsUsed = new Set();
 
   if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
     ProgressUI.show('Beautifying…', batches.length === 1 ? 'Fast single-pass formatting…' : `Formatting ${batches.length} parts in parallel…`);
+    ProgressUI.startAutoEstimate(batches.length * 6);
   }
 
   try {
@@ -1293,6 +1310,13 @@ async function beautifyDocument(options = {}) {
     const failedBatches = [];
     let completedCount = 0;
     let cursor = 0;
+
+    // If no batches, we're done
+    if (batches.length === 0) {
+      if (typeof displayToastNotification === 'function') displayToastNotification("⚠️ No content to beautify.");
+      if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
+      return;
+    }
 
     const worker = async () => {
       while (true) {
@@ -1308,6 +1332,7 @@ async function beautifyDocument(options = {}) {
         completedCount++;
         if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) {
           ProgressUI.setLabel(`Beautifying… ${completedCount}/${batches.length} parts done`);
+          ProgressUI.reportStepComplete(completedCount);
         }
       }
     };
@@ -1333,13 +1358,22 @@ async function beautifyDocument(options = {}) {
         displayToastNotification(`Beautify completed — ${failedBatches.length}/${batches.length} part(s) kept original formatting (batch ${failedBatches.join(', ')} failed to reach the AI).`);
       }
     } else {
-      if (typeof displayToastNotification === 'function') displayToastNotification('Beautify completed.');
+      if (typeof displayToastNotification === 'function') displayToastNotification('✅ Beautify completed successfully!');
+    }
+    // Show success message in chat
+    if (typeof appendChatMessageToUI === 'function') {
+      const modelNames = Array.from(modelsUsed).filter(Boolean);
+      const msg = `✅ Document beautified using ${modelNames.length ? modelNames.join(', ') : 'AI'}. ${failedBatches.length ? `(${failedBatches.length}/${batches.length} parts kept original)` : 'All parts formatted.'}`;
+      appendChatMessageToUI('ai', msg);
     }
 
   } catch (error) {
     if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
     if (typeof displayToastNotification === 'function') {
       displayToastNotification("Error Beautify failed: " + error.message + " — original content kept.");
+    }
+    if (typeof appendChatMessageToUI === 'function') {
+      appendChatMessageToUI('error', `⚠️ Beautify failed: ${error.message}`);
     }
     HISTORY.saveState();
     setDocumentHTMLAndPaginate(currentFullHTML, false);
