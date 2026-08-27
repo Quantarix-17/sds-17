@@ -220,6 +220,23 @@ function forceRenderAllKatexVisuals(containerElement) {
   });
 }
 
+// ===== FIND BROKEN DIAGRAMS =====
+function findBrokenDiagrams(containerElement) {
+  if (!containerElement || typeof containerElement.querySelectorAll !== 'function') return [];
+  const broken = [];
+  containerElement.querySelectorAll('.fc-wrapper').forEach((wrapper, i) => {
+    const svg = wrapper.querySelector('svg.fc-svg, svg');
+    const hasDrawable = !!(svg && svg.querySelector('rect, circle, ellipse, line, path, polyline, polygon, text, image, foreignObject'));
+    if (!svg || !hasDrawable) broken.push(wrapper.getAttribute('data-diagram-id') || ('diagram_' + i));
+  });
+  return broken;
+}
+
+// ===== ENSURE ALL PAGES MATH RENDERED (used before PDF export) =====
+function ensureAllPagesMathRendered() {
+  forceRenderAllEquations();
+}
+
 // ===== FIND BROKEN EQUATIONS =====
 function findBrokenEquations(containerElement) {
   if (!containerElement || typeof containerElement.querySelectorAll !== 'function') return [];
@@ -338,7 +355,10 @@ window.prepareEquationsForPDF = prepareEquationsForPDF;
 window.normalizeAIHTMLTextArtifacts = normalizeAIHTMLTextArtifacts;
 window.findBrokenEquations = findBrokenEquations;
 window.findBrokenDiagrams = findBrokenDiagrams;
-window.enforceDiagramVisualStyles = enforceDiagramVisualStyles;
-window.cleanupEmptyVisualContainers = cleanupEmptyVisualContainers;
 window.ensureAllPagesMathRendered = ensureAllPagesMathRendered;
+// Note: enforceDiagramVisualStyles & cleanupEmptyVisualContainers are defined in
+// document-editor.js (loaded after this file) — their top-level `function`
+// declarations already attach them to window automatically, so they don't
+// need (and must not have) an export line here, which would throw a
+// ReferenceError before document-editor.js has even loaded.
 window.repairVisibleEscapeSequencesInText = repairVisibleEscapeSequencesInText;
