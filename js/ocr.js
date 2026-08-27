@@ -650,90 +650,93 @@ async function extractTextFromPDFWithOCRFallback(file, startPage, endPage) {
 
   let avgConf = 0;
   if (needsOcr.length > 0 && !isCancellationRequested) {
-    const poolSize = Math.min(APP_CONFIG.OCR_MAX_PARALLEL_WORKERS, needsOcr.length);
-    const pool = await ensureOcrWorkerPool(poolSize);
+    // We'll process scanned pages using the full image OCR pipeline.
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) {
-      ProgressUI.setLabel(` OCR reading ${needsOcr.length} scanned page(s) — ${pool.length} in parallel...`);
+      ProgressUI.setLabel(`OCR reading ${needsOcr.length} scanned page(s) with full pipeline...`);
     }
 
-    let nextTaskIdx = 0;
-    let totalConfidence = 0, confCount = 0;
-
-    async function runWorkerSlot(slot) {
-      while (nextTaskIdx < needsOcr.length) {
-        if (isCancellationRequested) return;
-        const { idx, pageNum, page } = needsOcr[nextTaskIdx++];
-        if (typeof ProgressUI !== 'undefined' && ProgressUI.addPagePreview) {
-          ProgressUI.addPagePreview(` OCR Page ${pageNum}`, 'Recognizing text…', 'active');
+    // Process each page in parallel by rendering to a canvas and calling recognizeImageWithOcr.
+    const ocrResults = await Promise.all(
+      needsOcr.map(async ({ idx, pageNum, page }) => {
+        if (isCancellationRequested) {
+          return { idx, pageNum, text: '', confidence: 0, skipped: true, skipReason: 'Cancelled' };
         }
-        const viewport = page.getViewport({ scale: APP_CONFIG.OCR_RENDER_SCALE });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        preprocessCanvasForOcr(canvas);
-
-        let text = '';
-        let confidence = 0;
-        let pageState = 'done';
-        let pageMeta = 'OCR complete';
         try {
-          const { data } = await recognizeWithTimeout(
-            slot.worker,
-            canvas,
-            APP_CONFIG.OCR_PDF_PAGE_TIMEOUT_MS || APP_CONFIG.OCR_PASS_TIMEOUT_MS || 4500
-          );
-          text = (data && data.text) ? data.text.trim() : '';
-          confidence = (data && typeof data.confidence === 'number') ? data.confidence : 0;
-          if (!text) {
-            pageState = 'skipped';
-            pageMeta = 'No readable text detected — skipped';
-          }
-        } catch (pageError) {
-          const detail = String(pageError?.message || pageError || 'OCR failed');
-          console.warn(`OCR failed/skipped on page ${pageNum}:`, pageError);
-          if (/timeout/i.test(detail)) {
-            await replaceTimedOutOcrWorker(slot);
-            pageMeta = 'OCR timed out — page skipped';
-          } else {
-            pageMeta = 'OCR failed — page skipped';
-          }
-          pageState = 'skipped';
-          text = '';
-          confidence = 0;
-        }
+          // 1. Determine scale to reach target long edge (like runOcrOnImageFile)
+          const baseViewport = page.getViewport({ scale: 1 });
+          const longEdge = Math.max(baseViewport.width, baseViewport.height);
+          const targetLongEdge = APP_CONFIG.OCR_TARGET_LONG_EDGE || 4200;
+          const scale = Math.min(3.2, Math.max(1, targetLongEdge / longEdge));
 
-        results[idx] = { text, ocr: true, confidence, skipped: pageState === 'skipped' };
-        if (confidence > 0) {
-          totalConfidence += confidence;
-          confCount++;
-        }
-        completedSteps++;
+          // 2. Render page at that scale
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
 
+          // 3. Optional preprocessing (the pipeline also creates variants)
+          preprocessCanvasForOcr(canvas);
+
+          // 4. Use the full OCR pipeline
+          const result = await recognizeImageWithOcr(canvas);
+          return {
+            idx,
+            pageNum,
+            text: result.text || '',
+            confidence: result.confidence || 0,
+            skipped: result.skipped || false,
+            skipReason: result.skipReason || '',
+            passes: result.passes,
+            lineCount: result.lineCount
+          };
+        } catch (err) {
+          console.warn(`OCR failed on page ${pageNum}:`, err);
+          return { idx, pageNum, text: '', confidence: 0, skipped: true, skipReason: 'OCR error' };
+        }
+      })
+    );
+
+    // Fill results and update progress
+    for (const res of ocrResults) {
+      results[res.idx] = {
+        text: res.text,
+        ocr: true,
+        confidence: res.confidence,
+        skipped: res.skipped,
+        skipReason: res.skipReason
+      };
+      completedSteps++;
+      if (typeof ProgressUI !== 'undefined') {
         const previewContainer = document.getElementById('progress-live-preview');
         if (previewContainer) {
+          // Update preview if exists
           const items = previewContainer.querySelectorAll('.progress-page-thumb');
           const lastItem = items[items.length - 1];
           if (lastItem) {
-            lastItem.className = `progress-page-thumb ${pageState === 'skipped' ? 'done' : 'done'}`;
+            lastItem.className = `progress-page-thumb ${res.skipped ? 'done' : 'done'}`;
             const thumbText = lastItem.querySelector('.thumb-text');
             const thumbBadge = lastItem.querySelector('.thumb-badge');
-            if (thumbText) thumbText.textContent = text ? text.slice(0, 140) + (text.length > 140 ? '…' : '') : pageMeta;
-            if (thumbBadge) thumbBadge.textContent = pageState === 'skipped' ? 'Skipped' : '';
+            if (thumbText) thumbText.textContent = res.text ? res.text.slice(0, 140) + (res.text.length > 140 ? '…' : '') : (res.skipReason || 'Skipped');
+            if (thumbBadge) thumbBadge.textContent = res.skipped ? 'Skipped' : '';
           }
         }
-
-        if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) {
-          ProgressUI.setLabel(`OCR reading page ${pageNum} (${completedSteps}/${pagesToProcess}) — ${pageState === 'skipped' ? 'skipped' : 'complete'}`);
-          ProgressUI.reportStepComplete(completedSteps);
-        }
+        ProgressUI.setLabel(`OCR reading page ${res.pageNum} (${completedSteps}/${pagesToProcess}) — ${res.skipped ? 'skipped' : 'complete'}`);
+        ProgressUI.reportStepComplete(completedSteps);
       }
     }
 
-    await Promise.all(pool.map(runWorkerSlot));
+    // Compute average confidence
+    let totalConfidence = 0, confCount = 0;
+    for (const r of results) {
+      if (r && r.ocr && r.confidence > 0) {
+        totalConfidence += r.confidence;
+        confCount++;
+      }
+    }
     avgConf = confCount > 0 ? Math.round(totalConfidence / confCount) : 0;
 
     if (isCancellationRequested) {
@@ -750,11 +753,9 @@ async function extractTextFromPDFWithOCRFallback(file, startPage, endPage) {
     const r = results[idx] || { text: '', ocr: false };
     if (r.ocr) ocrPageCount++;
     fullText += `\n--- Page ${pageNum}${r.text ? '' : ' (empty)'} ---\n` + r.text;
-    const previewContainer = document.getElementById('progress-live-preview');
-    if (previewContainer && r.text && !previewContainer.querySelector(`.progress-page-thumb .thumb-label[data-page="${pageNum}"]`)) {
-      if (typeof ProgressUI !== 'undefined' && ProgressUI.addPagePreview) {
-        ProgressUI.addPagePreview(` Page ${pageNum}${r.ocr ? ' (OCR)' : ''}`, r.text.slice(0, 120) + (r.text.length > 120 ? '…' : ''), 'done');
-      }
+    // Add preview if not already
+    if (typeof ProgressUI !== 'undefined' && r.text) {
+      ProgressUI.addPagePreview(` Page ${pageNum}${r.ocr ? ' (OCR)' : ''}`, r.text.slice(0, 120) + (r.text.length > 120 ? '…' : ''), 'done');
     }
   }
 
@@ -1054,7 +1055,9 @@ function getConfidenceBadge(confidence) {
   if (confidence >= 75) return '<span class="ocr-confidence-badge ocr-conf-high">High </span>';
   if (confidence >= 45) return '<span class="ocr-confidence-badge ocr-conf-med">Medium ~</span>';
   return '<span class="ocr-confidence-badge ocr-conf-low">Low Warning</span>';
-  // ============================================================
+}
+
+// ============================================================
 // WINDOW EXPOSURE – OCR
 // ============================================================
 window.handleFileUploads = handleFileUploads;
@@ -1063,4 +1066,3 @@ window.renderAttachmentBar = renderAttachmentBar;
 window.runOcrOnImageFile = runOcrOnImageFile;
 window.extractTextFromPDFWithOCRFallback = extractTextFromPDFWithOCRFallback;
 window.terminateOcrWorkersForCancellation = terminateOcrWorkersForCancellation;
-}
