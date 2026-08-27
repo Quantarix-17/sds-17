@@ -358,9 +358,27 @@ function shakeChatInputField() {
 }
 
 // ===== ADD / REMOVE COMMANDS =====
+// ------------------------------------------------------------------------
+// FIX (2026-08-27): @Create PDF (and @Exam) were silently failing to be
+// added to APP_STATE.selectedCommands.
+//
+// Root cause: ensureCommandDependencies() reassigns
+// `window.APP_STATE.selectedCommands = window.APP_STATE.selectedCommands.filter(...)`
+// whenever cmd.id is 'create_pdf' or 'exam' (this ALWAYS creates a brand
+// new array via .filter(), even when nothing is actually removed).
+//
+// attemptAddAtCommand() used to cache the OLD array reference in a
+// `const sel` BEFORE calling ensureCommandDependencies(), and then kept
+// pushing/splicing onto that now-orphaned old array afterward. The new
+// command was therefore added to an array nobody was pointing to anymore,
+// so the chip never rendered and buildIntentPayload() never saw the intent.
+//
+// Fix: `sel` is now `let` and gets re-read from window.APP_STATE right
+// after any point that might have reassigned window.APP_STATE.selectedCommands.
+// ------------------------------------------------------------------------
 function attemptAddAtCommand(cmd, param, options = {}) {
   if (!cmd || !window.APP_STATE) return false;
-  const sel = window.APP_STATE.selectedCommands;
+  let sel = window.APP_STATE.selectedCommands;
 
   if (cmd.id === 'chat') {
     if (sel.length > 0) {
@@ -379,20 +397,28 @@ function attemptAddAtCommand(cmd, param, options = {}) {
 
   if (!ensureCommandDependencies(cmd, { silent: options.silentParent !== false })) return false;
 
+  // FIX: ensureCommandDependencies() may have replaced window.APP_STATE.selectedCommands
+  // with a brand-new array (e.g. via .filter() when cmd.id === 'create_pdf' or 'exam').
+  // Re-read it here so we don't keep mutating a now-orphaned old array.
+  sel = window.APP_STATE.selectedCommands;
+
   if (cmd.category === 'intent') {
     const existingPrimary = sel.find(c => c.category === 'intent' && c.id !== cmd.id && c.id !== 'create_pdf' && c.id !== cmd.autoParent);
     if (existingPrimary && existingPrimary.id !== 'exam') {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== existingPrimary.id);
+      sel = window.APP_STATE.selectedCommands; // FIX: refresh again after reassignment
     }
     if (cmd.id === 'exam') {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'create_pdf');
+      sel = window.APP_STATE.selectedCommands; // FIX: refresh again after reassignment
     }
   }
 
   if (cmd.category !== 'content') {
     const existingSameCategory = sel.find(c => c.category === cmd.category && c.id !== cmd.id && !c.implicit);
     if (existingSameCategory) {
-      window.APP_STATE.selectedCommands.splice(sel.indexOf(existingSameCategory), 1);
+      const idx = sel.indexOf(existingSameCategory);
+      if (idx > -1) sel.splice(idx, 1); // FIX: splice the SAME array we just searched (sel)
       displayToastNotification(`Replaced '@${existingSameCategory.label}' with '@${cmd.label}'`);
     }
   }
@@ -914,6 +940,7 @@ function buildAtCommandInstructionText(intentPayload) {
   }
 
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
+}
 // ============================================================
 // WINDOW EXPOSURE – Command Menu
 // ============================================================
@@ -946,4 +973,3 @@ window.isDocumentOperationIntent = isDocumentOperationIntent;
 window.getAtCommandById = getAtCommandById;
 window.getCommandsForCategory = getCommandsForCategory;
 window.getCommandCategoryKey = getCommandCategoryKey;
-}
