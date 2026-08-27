@@ -165,14 +165,6 @@ function convertTextToDocumentHTML(text) {
 
 // ===== CHAT UI HELPERS =====
 function appendChatMessageToUI(role, messageText, recordHistory = true) {
-  // Always show AI messages, even during document generation
-  // But if we're suppressing document AI chat and role is 'ai', we skip only the
-  // automatic document-generation messages that are handled elsewhere.
-  // The flag is used to prevent duplicate messages during sectioned generation.
-  // We'll allow all messages now and handle duplicates in the calling code.
-  // Actually, we want to show all AI messages always. The flag is used in the caller
-  // to decide whether to show certain messages. So we'll just render.
-
   const chatHistoryArea = document.getElementById('chat-history');
   if (!chatHistoryArea) return { isConnected: false, remove() {} };
   const messageDiv = document.createElement('div');
@@ -723,7 +715,7 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
   } : {
     definition: 'সংজ্ঞা:',
     example: 'উদাহরণ:',
-    important: 'মনে রাখবে:',
+    important: 'মনে রাখবেন:',
     note: 'নোট:',
     warning: 'সতর্কতা:',
     solution: 'সমাধান'
@@ -882,8 +874,8 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
     Inline variables like x, y, z used in a math sense also count — they must be wrapped: $x$, $y$, $z$.
     Never leave raw backslash commands outside delimiters.
 
-    === PROFESSIONAL MCQ FORMAT — MANDATORY ===
-    When asked for MCQs, output a clean exam-ready structure.
+    === PROFESSIONAL MCQ FORMAT — MANDATORY (ONLY WHEN @Exam IS ACTIVE) ===
+    When @Exam is explicitly selected by the user, output a clean exam-ready structure.
     Wrap ALL questions in one <div class="quiz-container">.
     Each question MUST be one <div class="quiz-item"> containing exactly one <div class="quiz-question"> and one <div class="quiz-options">.
     Each <div class="quiz-options"> MUST contain exactly FOUR <div class="quiz-option"> choices.
@@ -894,6 +886,7 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
     The Answer Key must contain exactly one <div class="quiz-answer-item"> per question and must use the correct option letter.
     If explanations are requested, put them inside <div class="quiz-explanation"> under the relevant question or in the answer key.
     Never output MCQs as Markdown tables, loose numbered text, JSON, or plain A/B/C/D lines.
+    IMPORTANT: Do NOT include MCQ/quiz content UNLESS the user explicitly selected @Exam command.
 
     === ABSOLUTE BAN ON CODING / DECISION FLOWCHARTS ===
     NEVER generate coding or algorithmic flowcharts (NO IF/ELSE, NO "Yes/No" labels). For "flowchart", generate a clean "Sequential Step-by-Step Process Flow".
@@ -1018,7 +1011,7 @@ function cleanAttachmentSourceForAI(rawContent) {
     if (/^\.\.\.\[TRUNCATED\]$/i.test(t)) continue;
     if (/^\[?(?:end of )?page\s*\d+\]?$/i.test(t)) continue;
     const normalized = t.replace(/\s+/g, ' ');
-    if ((counts.get(normalized) || 0) >= 3 && normalized.length <= 100 && !/[.!?;:：।]$/.test(normalized)) continue;
+    if ((counts.get(normalized) || 0) >= 3 && normalized.length <= 100 && !/[.!?;:।]$/.test(normalized)) continue;
     out.push(line);
   }
   while (out[0] === '') out.shift();
@@ -1092,7 +1085,7 @@ async function generateHtmlContentWithAutoContinue(promptText, htmlSoFar, finish
     if (isCancellationRequested) break;
     loops++;
     if (typeof displayToastNotification === 'function') {
-      displayToastNotification(`🔄 Token limit reached — continuing generation (part ${loops + 1})...`);
+      displayToastNotification(`🔃 Token limit reached — continuing generation (part ${loops + 1})...`);
     }
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) {
       ProgressUI.setLabel(`Token limit reached — continuing generation (part ${loops + 1} of up to ${maxLoops + 1})...`);
@@ -1572,6 +1565,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: null, language: outputLanguage, sectionMode: false }) : ''}\n` +
     `DEFAULT DIRECT RULES: create the complete requested document in one continuous generation flow. Follow the user's requested scope, depth and detail. There is no fixed page target. Do not intentionally compress a detailed request, and do not pad a simple request. Use natural headings, definitions, explanations, formulas, worked examples, tables and useful visuals where they materially improve the document.\n` +
+    `IMPORTANT: Do NOT include MCQ, quiz, or exam-style content unless the user explicitly selected @Exam command. If the user did not select @Exam, generate a regular study note/document without any MCQ.\n` +
     `OUTPUT SAFETY: the result must contain substantial visible explanatory content, not just a title or outline. Use semantic HTML suitable for the existing A4 pagination engine.\n`;
 
   const userPrompt =
@@ -1728,6 +1722,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: isLong ? 'long_pdf' : 'short_pdf', language: outputLanguage, sectionMode: false }) : ''}\n` +
     (isLong ? `LONG DIRECT RULES: write a genuinely comprehensive document. Cover the full requested scope with definitions, concepts, formulas, properties, examples, applications, comparisons, common mistakes, summaries and useful tables/diagrams where appropriate. Do not intentionally compress the content. The document should naturally produce ${minPages}+ A4 pages when the topic supports it. Never pad with repetition.\n` : `SHORT DIRECT RULES: produce a compact but complete document, normally about 2–5 A4 pages. Preserve the essential concepts, key formulas/facts, representative examples and a concise summary. Do not return only a title or outline.\n`) +
+    `IMPORTANT: Do NOT include MCQ, quiz, or exam-style content unless the user explicitly selected @Exam command. If the user did not select @Exam, generate a regular study note/document without any MCQ.\n` +
     `OUTPUT SAFETY: the result must contain substantial visible explanatory content. Use semantic HTML suitable for the existing A4 pagination engine.\n`;
 
   const userPrompt =
@@ -2301,7 +2296,7 @@ async function sendChatPromptToAI() {
 
       const systemPrompt =
         `You are an AI Document Assistant. MODE: ${isMonochromeMode ? 'MONOCHROME' : 'COLORFUL'}.\n${typeof buildSharedRules === 'function' ? buildSharedRules(isMonochromeMode, outputLanguageSingle || 'en') : ''}${strategyContextSingle}\n` +
-        `CRITICAL INSTRUCTION FOR MCQ: Use the mandatory professional MCQ format from the shared rules: one question per row, exactly four options A-D in a two-column options grid, and one matching Answer Key at the end. Do not use a two-column layout for the question stems.\n` +
+        `CRITICAL INSTRUCTION FOR MCQ: Use the mandatory professional MCQ format from the shared rules: one question per row, exactly four options A-D in a two-column options grid, and one matching Answer Key at the end. Do not use a two-column layout for the question stems. IMPORTANT: Only include MCQ if the user explicitly selected @Exam. For regular document generation, NEVER include MCQ.\n` +
         `CRITICAL INSTRUCTION FOR FLOWCHARTS: NEVER EVER create decision branches with "Yes" / "No" labels or coding logic. Generate simple step-by-step process flow.\n` +
         `JSON STRUCTURE OPTIONS:\n1. Append (Add to end): {"action": "append_content", "html_content": "...", "chat_summary": "..."}\n2. Update Specific Section: {"action": "update_section", "target_heading": "Exact Heading from Canvas", "new_html": "...", "chat_summary": "..."}\n3. Prepend (Add to top): {"action": "prepend_content", "html_content": "...", "chat_summary": "..."}\n4. Replace ALL: {"action": "replace_all", "html_content": "...", "chat_summary": "..."}\n5. Update ONE specific page: {"action": "update_page", "page_number": <integer>, "new_html": "...", "chat_summary": "..."}\n6. Update MULTIPLE pages: {"action": "update_pages", "updates": [{"page_number": 1, "new_html": "..."}], "chat_summary": "..."}\n7. Just reply: {"action": "chat_reply", "message": "..."}\n${headingWarningSingle}${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText(intentPayload) : ''}`;
 
@@ -2624,7 +2619,7 @@ function handleChatKeyPress(event) {
 }
 
 // ============================================================
-// WINDOW EXPOSURE – Main App
+// WINDOW EXPOSURE — Main App
 // ============================================================
 window.handleChatFormSubmit = handleChatFormSubmit;
 window.triggerChatSend = triggerChatSend;
