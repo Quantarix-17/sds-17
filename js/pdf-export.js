@@ -1064,7 +1064,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== COMPUTE TRUE PDF PAGES =====
+// ===== COMPUTE TRUE PDF PAGES (WITH IMPROVED PAGINATION) =====
 async function computeTruePDFPages(htmlOverride) {
   const isExam = document.body.classList.contains('exam-document');
   const rawHtml = htmlOverride !== undefined ? htmlOverride : (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '');
@@ -1080,6 +1080,10 @@ async function computeTruePDFPages(htmlOverride) {
       if (page) {
         page.classList.add('exam-document');
         page.innerHTML = source.innerHTML;
+        // Ensure math is rendered
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+        if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
       }
       return page;
     }).filter(Boolean);
@@ -1105,12 +1109,21 @@ async function computeTruePDFPages(htmlOverride) {
 
   const tempSource = document.createElement('div');
   tempSource.innerHTML = typeof processMathEquationsToHTML === 'function' ? processMathEquationsToHTML(typeof sanitizeHTML === 'function' ? sanitizeHTML(rawHtml) : rawHtml) : rawHtml;
+  // Apply math rendering to the source before paginating
+  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(tempSource);
+  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(tempSource);
+  
   const topLevelNodes = typeof flattenContentTopLevelNodes === 'function' ? flattenContentTopLevelNodes(tempSource) : Array.from(tempSource.childNodes);
 
   const pageEls = [];
   const createPage = () => {
     const page = typeof createPDFMeasurePage === 'function' ? createPDFMeasurePage(offscreen) : null;
-    if (page) pageEls.push(page);
+    if (page) {
+      // Apply math rendering right away
+      if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+      if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+      pageEls.push(page);
+    }
     return page;
   };
 
@@ -1122,7 +1135,15 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  await Promise.all(pageEls.map(el => typeof waitForPDFLayoutStable === 'function' ? waitForPDFLayoutStable(el) : Promise.resolve()));
+  // Final pass: ensure all pages fit, shrink if necessary
+  for (const page of pageEls) {
+    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
+    if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
+    // If still overflowing, try to shrink content
+    if (!pageFits(page)) {
+      if (typeof shrinkPageToFit === 'function') shrinkPageToFit(page);
+    }
+  }
 
   const pages = pageEls.map(el => ({
     el,
@@ -1407,7 +1428,7 @@ function splitOversizedTableToFit(pageEl, createContinuationPage) {
   return newPages;
 }
 
-// ===== APPEND NODE WITH PAGINATION =====
+// ===== APPEND NODE WITH PAGINATION (IMPROVED) =====
 async function appendNodeWithPagination(node, currentPage, createPage) {
   if (node.nodeType === Node.TEXT_NODE) {
     if (!node.textContent.trim()) return currentPage;
@@ -1431,29 +1452,36 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
 
   currentPage.removeChild(testClone);
 
+  // Special handling for MCQ containers - keep them together as much as possible
   if (node.classList && node.classList.contains('quiz-container')) {
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitQuizContainer(node, currentPage, createPage)).page;
   }
 
+  // For lists
   if (/^(UL|OL)$/i.test(node.tagName)) {
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitListElement(node, currentPage, createPage)).page;
   }
 
+  // For text-heavy elements (P, LI, BLOCKQUOTE, PRE, CODE)
   const childElements = Array.from(node.children || []);
   const hasOnlyText = childElements.length === 0;
-  const isBreakableText = /^(P|LI|BLOCKQUOTE|PRE|CODE)$/i.test(node.tagName);
-  if (hasOnlyText && isBreakableText) {
+  const isBreakableText = /^(P|LI|BLOCKQUOTE|PRE|CODE|DIV)$/i.test(node.tagName) && hasOnlyText;
+  
+  if (isBreakableText) {
+    // For plain text blocks, split by words/characters intelligently
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitPlainTextElement(node, currentPage, createPage)).page;
   }
 
+  // For elements with children that are not easily splittable (e.g., tables, SVGs)
   if (childElements.length && !/^(IMG|SVG|CANVAS|TABLE|HR)$/i.test(node.tagName)) {
     if (pageHasContent(currentPage)) currentPage = createPage();
     return (await splitChildFlowElement(node, currentPage, createPage)).page;
   }
 
+  // Fallback: move the whole node to the next page
   if (pageHasContent(currentPage)) currentPage = createPage();
   const finalClone = appendClone(currentPage, node);
   if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
@@ -1485,8 +1513,12 @@ function cloneElementShell(node) {
 }
 
 async function splitPlainTextElement(node, currentPage, createPage) {
-  const words = (node.textContent || '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return { page: currentPage, didSplit: false };
+  const textContent = node.textContent || '';
+  const words = textContent.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    // If no words (maybe just a space), return
+    return { page: currentPage, didSplit: false };
+  }
 
   let page = currentPage;
   let chunk = cloneElementShell(node);
@@ -1494,29 +1526,107 @@ async function splitPlainTextElement(node, currentPage, createPage) {
   let text = '';
   let didSplit = false;
 
+  // Helper to check if a text block fits
+  const checkFit = async (el) => {
+    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(el);
+    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(el);
+    await waitForImagesToLoad(el);
+    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(el);
+    return pageFits(page);
+  };
+
   for (let i = 0; i < words.length; i++) {
     const candidate = text ? `${text} ${words[i]}` : words[i];
     chunk.textContent = candidate;
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(chunk);
-    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(chunk);
-    await waitForImagesToLoad(chunk);
-    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(chunk);
-    if (!pageFits(page)) {
+    
+    if (!(await checkFit(chunk))) {
       if (!text) {
-        text = candidate;
+        // The single word doesn't fit. Try splitting the word itself (character by character) if it's long.
+        if (candidate.length > 20) {
+          // Split the candidate string into smaller chunks (e.g., 10 chars) and try to fit
+          const chars = candidate.split('');
+          let subText = '';
+          let subChunk = cloneElementShell(node);
+          page.appendChild(subChunk);
+          for (let j = 0; j < chars.length; j++) {
+            const subCandidate = subText ? subText + chars[j] : chars[j];
+            subChunk.textContent = subCandidate;
+            if (!(await checkFit(subChunk))) {
+              // The previous subChunk fits, but this one doesn't. Move the previous to page and start a new one.
+              if (subText) {
+                // Remove current subChunk and keep the previous one
+                subChunk.remove();
+                // Create a new page for the rest
+                if (pageHasContent(page)) {
+                  page = createPage();
+                }
+                // Start new chunk with the current character
+                subChunk = cloneElementShell(node);
+                page.appendChild(subChunk);
+                subText = chars[j];
+                subChunk.textContent = subText;
+              } else {
+                // Even a single character doesn't fit (shouldn't happen), fallback to moving whole word
+                subChunk.remove();
+                if (pageHasContent(page)) {
+                  page = createPage();
+                }
+                chunk = cloneElementShell(node);
+                page.appendChild(chunk);
+                chunk.textContent = candidate;
+                didSplit = true;
+                break;
+              }
+            } else {
+              subText = subCandidate;
+            }
+          }
+          // If we successfully split by chars, we don't need the original chunk
+          if (chunk.parentNode) chunk.remove();
+          didSplit = true;
+          break;
+        } else {
+          // Single word too big for the page. Move it to a new page.
+          chunk.remove();
+          if (pageHasContent(page)) {
+            page = createPage();
+          }
+          chunk = cloneElementShell(node);
+          page.appendChild(chunk);
+          chunk.textContent = candidate;
+          didSplit = true;
+          break;
+        }
+      } else {
+        // The previous text fits, but adding this word doesn't. So keep the previous text on this page.
+        chunk.textContent = text;
+        // Start a new page for the remaining words
+        const remainingWords = words.slice(i);
+        if (remainingWords.length > 0) {
+          const remainingText = remainingWords.join(' ');
+          const newPage = createPage();
+          const newChunk = cloneElementShell(node);
+          newPage.appendChild(newChunk);
+          newChunk.textContent = remainingText;
+          didSplit = true;
+        }
         break;
       }
-      chunk.textContent = text;
-      page = createPage();
-      chunk = cloneElementShell(node);
-      page.appendChild(chunk);
-      text = words[i];
-      chunk.textContent = text;
-      didSplit = true;
     } else {
       text = candidate;
     }
   }
+
+  // If we didn't split and there's content, just return the current page
+  if (!didSplit && text) {
+    // Ensure chunk is attached
+    if (!chunk.parentNode) {
+      page.appendChild(chunk);
+      chunk.textContent = text;
+    }
+    return { page, didSplit: false };
+  }
+
   return { page, didSplit };
 }
 
