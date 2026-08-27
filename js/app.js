@@ -18,6 +18,11 @@ let APP_STATE = {
   suppressDocumentAIChat: false,
   pendingEditPages: null
 };
+// `let` declarations don't attach to `window`, but tab-manager.js, document-editor.js,
+// ocr.js, command-menu.js and ui-helpers.js all read/write `window.APP_STATE` (100+ call
+// sites) expecting it to be this same object. Without this line every `window.APP_STATE?.x`
+// read silently returns undefined and every `window.APP_STATE.x = ...` write throws.
+window.APP_STATE = APP_STATE;
 
 // ===== RUNTIME STATE ACCESS LAYER =====
 function getActiveTabIdSafe() {
