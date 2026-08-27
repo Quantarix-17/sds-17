@@ -1611,9 +1611,22 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Processing AI response…', 72, 84);
     let generated = extractHTML(result);
 
-    if (usableTextLength(generated) < 900) {
+    // If the AI returns a chat_reply-like JSON wrapper (e.g. {"action":"chat_reply","message":"..."}),
+    // try to extract the message and convert it to HTML.
+    if (generated && generated.startsWith('{') && generated.includes('"action"')) {
+      const parsedJson = safeParseAIJson(generated, null);
+      if (parsedJson && parsedJson.action === 'chat_reply' && parsedJson.message) {
+        generated = convertTextToDocumentHTML(parsedJson.message);
+      }
+    }
+
+    // If still empty or too short, retry with a more forceful prompt.
+    if (usableTextLength(generated) < 250) {
       const retryMaxTokens = Math.max(APP_CONFIG.PDF_TOKEN_BUDGETS.DEFAULT_SINGLE, APP_CONFIG.PDF_TOKEN_BUDGETS.SHORT);
-      const retryResult = await callAIAPI([{ role: 'system', content: systemPrompt + `\nRECOVERY RULE: The previous response was too short or incomplete. Write the actual full document now. Do not output only the title, outline or summary. Return substantive HTML only.` }, { role: 'user', content: userPrompt + `\nIMPORTANT: The final result must contain real explanatory content suitable for a PDF, not an outline.` }], {
+      const retryResult = await callAIAPI([
+        { role: 'system', content: systemPrompt + `\nRECOVERY RULE: The previous response was too short or incomplete. Write the actual full document now. Do not output only the title, outline or summary. Return substantive HTML only.` },
+        { role: 'user', content: userPrompt + `\nIMPORTANT: The final result must contain real explanatory content suitable for a PDF, not an outline.` }
+      ], {
         forceJson: false,
         modelsUsedSet,
         modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg,
@@ -1621,12 +1634,20 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
       });
       if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
       const retryHTML = extractHTML(retryResult);
-      if (usableTextLength(retryHTML) > usableTextLength(generated)) { generated = retryHTML;
-        effectiveMaxTokens = retryMaxTokens; }
+      if (usableTextLength(retryHTML) > usableTextLength(generated)) {
+        generated = retryHTML;
+        effectiveMaxTokens = retryMaxTokens;
+      }
     }
 
     if (requestSessionId !== APP_STATE.activeSessionId) return { ok: false, aborted: true };
-    if (usableTextLength(generated) < 250) throw new Error('The AI response contained no substantive document content.');
+    if (usableTextLength(generated) < 250) {
+      // If still no content, show a meaningful error and return.
+      const msg = 'The AI did not generate any document content. Please try a more specific request, or check your AI model settings.';
+      if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', msg);
+      if (typeof displayToastNotification === 'function') displayToastNotification(msg);
+      return { ok: false, message: msg };
+    }
 
     if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Rendering A4 pages…', 84, 96);
@@ -1638,7 +1659,10 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     const currentPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
     const lastText = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource().slice(-18000) : '';
     if (currentPages > 0 && detectTruncatedContent(generated, effectiveMaxTokens)) {
-      const continuation = await callAIAPI([{ role: 'system', content: `Continue the SAME DEFAULT PDF document. Return ONLY a new HTML fragment to append. Do not restart, repeat the title, summarize, or output JSON/markdown. Add genuinely new content needed to complete the user's request.\nUSER REQUEST: ${promptText}` }, { role: 'user', content: `CURRENT DOCUMENT TAIL:\n${lastText}\n\nAPPEND NEW CONTENT ONLY.` }], {
+      const continuation = await callAIAPI([
+        { role: 'system', content: `Continue the SAME DEFAULT PDF document. Return ONLY a new HTML fragment to append. Do not restart, repeat the title, summarize, or output JSON/markdown. Add genuinely new content needed to complete the user's request.\nUSER REQUEST: ${promptText}` },
+        { role: 'user', content: `CURRENT DOCUMENT TAIL:\n${lastText}\n\nAPPEND NEW CONTENT ONLY.` }
+      ], {
         forceJson: false,
         modelsUsedSet,
         modelConfig: _generationLockedModelConfig || result?.modelConfig || activeCfg,
@@ -1657,7 +1681,25 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     return { ok: true };
   } catch (e) {
     console.error('[Default PDF Direct Mode] failed:', e);
-    return { ok: false, message: (e && e.message) ? String(e.message) : 'Unknown error.' };
+    // Display a friendly error message in chat and toast.
+    const errorMsg = (e && e.message) ? String(e.message) : 'Unknown error.';
+    if (e && e.noModelConfigured) {
+      if (typeof appendChatMessageToUI === 'function') {
+        appendChatMessageToUI('error', '⚠️ No AI model configured. Please click the "AI Models" button in the top bar, add a model, and try again.');
+      }
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification('⚠️ No AI model added — please configure one in AI Models.');
+      }
+    } else {
+      if (typeof appendChatMessageToUI === 'function') {
+        appendChatMessageToUI('error', `⚠️ PDF generation failed: ${errorMsg}`);
+      }
+      if (typeof displayToastNotification === 'function') {
+        displayToastNotification(`Error: ${errorMsg}`);
+      }
+    }
+    if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
+    return { ok: false, message: errorMsg };
   }
 }
 
@@ -1720,7 +1762,10 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
 
     if (textLength(generated) < minUsefulChars) {
       if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Recovery request…', 72, 84, { indeterminate: true });
-      const retry = await callAIAPI([{ role: 'system', content: systemPrompt + `\nRECOVERY MODE: the previous response was too short or empty. Write the actual complete document now. Do not output only a title, outline, JSON, or explanation. Return substantive HTML only.` }, { role: 'user', content: userPrompt + `\nIMPORTANT: the final result must contain substantial visible document content.` }], {
+      const retry = await callAIAPI([
+        { role: 'system', content: systemPrompt + `\nRECOVERY MODE: the previous response was too short or empty. Write the actual complete document now. Do not output only a title, outline, JSON, or explanation. Return substantive HTML only.` },
+        { role: 'user', content: userPrompt + `\nIMPORTANT: the final result must contain substantial visible document content.` }
+      ], {
         forceJson: false,
         modelsUsedSet,
         modelConfig: result?.modelConfig,
@@ -1743,7 +1788,10 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
     const pages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
     if (isLong && pages < minPages) {
       try {
-        const expansion = await callAIAPI([{ role: 'system', content: systemPrompt + `\nEXPANSION MODE: the first document was too short after A4 pagination. Return ONLY additional HTML content that adds genuinely new depth: missing subtopics, examples, applications, comparisons, exercises or useful visuals. Do not repeat existing material.` }, { role: 'user', content: `Original request: ${promptText}\n\nCurrent document tail:\n${typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML().slice(-10000) : ''}\n\nAdd substantive new content to make the document more comprehensive.` }], {
+        const expansion = await callAIAPI([
+          { role: 'system', content: systemPrompt + `\nEXPANSION MODE: the first document was too short after A4 pagination. Return ONLY additional HTML content that adds genuinely new depth: missing subtopics, examples, applications, comparisons, exercises or useful visuals. Do not repeat existing material.` },
+          { role: 'user', content: `Original request: ${promptText}\n\nCurrent document tail:\n${typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML().slice(-10000) : ''}\n\nAdd substantive new content to make the document more comprehensive.` }
+        ], {
           forceJson: false,
           modelsUsedSet,
           modelConfig: result?.modelConfig,
@@ -2184,7 +2232,7 @@ async function sendChatPromptToAI() {
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', '✅ PDF generated successfully.');
         } else if (!directResult || !directResult.aborted) {
           const reason = (directResult && directResult.message) ? directResult.message : 'Unknown error.';
-          if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `Default PDF generation failed: ${reason} The document was left unchanged.`);
+          if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `PDF generation failed: ${reason}`);
         }
         APP_STATE.suppressDocumentAIChat = false;
         APP_STATE.isAIGenerating = false;
@@ -2447,7 +2495,18 @@ async function sendChatPromptToAI() {
       if (loadingElement) loadingElement.remove();
       if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
       APP_STATE.suppressDocumentAIChat = false;
-      if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `⚠️ Error: ${error.message}`);
+      // Show a user-friendly error message.
+      let userFriendlyMsg = error.message || 'Unknown error.';
+      if (error.noModelConfigured) {
+        userFriendlyMsg = 'No AI model configured. Please click "AI Models" and add a model.';
+      } else if (error.kind === 'network') {
+        userFriendlyMsg = 'Network error — please check your internet connection and AI model API URL.';
+      } else if (error.kind === 'empty_response') {
+        userFriendlyMsg = 'The AI returned an empty response. Please try again with a clearer request.';
+      } else if (error.kind === 'malformed_response') {
+        userFriendlyMsg = 'The AI returned malformed data. Please try again.';
+      }
+      if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `⚠️ ${userFriendlyMsg}`);
       console.error('sendChatPromptToAI error:', error);
     }
     APP_STATE.suppressDocumentAIChat = false;
