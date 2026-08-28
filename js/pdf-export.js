@@ -691,6 +691,26 @@ async function _runLivePDFIframePreview(requestedToken) {
     _pdfPreviewPending = true;
     return;
   }
+
+  // Check the cache BEFORE showing any loading UI. Previously the "Preparing
+  // PDF preview..." overlay was shown first and only checked afterwards,
+  // so even an unchanged document flashed "preparing" every time the PDF
+  // tab was reopened. Now, if nothing changed, we skip straight through
+  // with no loading flash at all.
+  const earlySignature = hashPDFPreviewSignature();
+  const earlyIsMonochromeMode = document.body.classList.contains('photocopy-mode');
+  const earlyPreviewMode = earlyIsMonochromeMode ? 'mono' : 'color';
+  if (_pdfLastRenderedSignature === earlySignature && _pdfLastRenderedMode === earlyPreviewMode && (iframe.src || iframe.srcdoc)) {
+    if (loadingEl) {
+      loadingEl.classList.remove('active');
+      loadingEl.style.display = 'none';
+      loadingEl.setAttribute('aria-busy', 'false');
+    }
+    iframe.classList.remove('pdf-loading');
+    iframe.style.opacity = '1';
+    return;
+  }
+
   _pdfPreviewRunning = true;
   
   if (loadingEl) {
@@ -712,19 +732,6 @@ async function _runLivePDFIframePreview(requestedToken) {
     const signature = hashPDFPreviewSignature();
     const isMonochromeMode = document.body.classList.contains('photocopy-mode');
     const previewMode = isMonochromeMode ? 'mono' : 'color';
-
-    if (_pdfLastRenderedSignature === signature && _pdfLastRenderedMode === previewMode && (iframe.src || iframe.srcdoc)) {
-      if (loadingStatusEl) loadingStatusEl.textContent = '✅ PDF preview ready';
-      if (loadingEl) {
-        loadingEl.classList.remove('active');
-        loadingEl.style.display = 'none';
-        loadingEl.setAttribute('aria-busy', 'false');
-      }
-      iframe.classList.remove('pdf-loading');
-      iframe.style.opacity = '1';
-      _pdfPreviewRunning = false;
-      return;
-    }
 
     prepareDocumentForPDFPreview(signature);
 
@@ -901,7 +908,13 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
       html, body { margin:0; padding:0; height:100%; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
       body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
-      .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; contain:layout style paint; content-visibility:auto; contain-intrinsic-size:${PDF_LAYOUT.height}px; }
+      /* NOTE: content-visibility:auto was removed here on purpose. This document is
+         rendered in a hidden, off-screen iframe (left:-10000px) purely to drive
+         window.print()/"Save as PDF" — it is never scrolled into a real viewport,
+         so pages never satisfy the browser's "near viewport" heuristic and can be
+         left permanently unrendered (blank) even with a print-media override.
+         This was the cause of the 2nd page / last page printing blank. */
+      .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; }
       .pdf-page { background:#fff; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
       .pdf-footer { position:absolute; bottom:${PDF_LAYOUT.footerBottom}px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
       .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; padding-left:0 !important; padding-right:0 !important; overflow:visible !important; color:#000 !important; }
@@ -952,7 +965,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .photocopy-mode .omr-sheet-header { border-color:#000 !important; }
       .photocopy-mode .omr-grid { border-color:#000 !important; }
       .photocopy-mode .omr-bubble { border-color:#000 !important; color:#000 !important; }
-      @media print { html, body { height:auto !important; overflow:visible !important; -webkit-overflow-scrolling:auto !important; } .pdf-page-wrap{contain:none !important; content-visibility:visible !important; contain-intrinsic-size:auto !important;} body{padding:0 !important;background:#fff !important; display:block !important;} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always; break-after:page;} .pdf-page-wrap:last-child{page-break-after:auto; break-after:auto;} .pdf-page{transform:none !important;box-shadow:none !important} }
+      @media print { html, body { height:auto !important; overflow:visible !important; -webkit-overflow-scrolling:auto !important; } body{padding:0 !important;background:#fff !important; display:block !important;} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always; break-after:page;} .pdf-page-wrap:last-child{page-break-after:auto; break-after:auto;} .pdf-page{transform:none !important;box-shadow:none !important} }
       @media (max-width:850px) { body{padding:8px 0 !important; align-items:center;} .pdf-page-wrap{margin:0 auto 12px; overflow:hidden;} .pdf-page{transform-origin:top left;} }
     </style>
   </head><body>${pagesHTML}
@@ -1189,13 +1202,16 @@ function applyLocalMarginSafetyFixes(result) {
       const page = typeof createPDFMeasurePage === 'function' ? createPDFMeasurePage(result.offscreen) : null;
       return page;
     }) : { extraPages: [] };
-    p.overflow = p.el.scrollHeight > PDF_LAYOUT.height;
+    // Use the same safeHeight-aware check as everywhere else (pageFits reserves
+    // room for the footer). Comparing raw scrollHeight to PDF_LAYOUT.height let
+    // pages pass this check while still overlapping the footer number/margin.
+    p.overflow = !pageFits(p.el);
     p.html = p.el.innerHTML;
     if (extraPages && extraPages.length) {
       const extraEntries = extraPages.map(el => ({
         el,
         html: el.innerHTML,
-        overflow: el.scrollHeight > PDF_LAYOUT.height,
+        overflow: !pageFits(el),
         brokenEquations: typeof findBrokenEquations === 'function' ? findBrokenEquations(el) : []
       }));
       result.pages.splice(i + 1, 0, ...extraEntries);
@@ -1250,8 +1266,17 @@ function switchPreviewTab(tabName) {
         iframe.style.flex = '1 1 auto';
       }
     }
+    // Only flash the loading overlay if the preview will actually be
+    // regenerated. Previously this always showed "Loading PDF preview...",
+    // so re-opening the PDF tab with an unchanged document still showed the
+    // preparing state briefly every time.
+    const iframeForCheck = document.getElementById('pdf-iframe');
+    const willReuseCache = iframeForCheck && (iframeForCheck.src || iframeForCheck.srcdoc) &&
+      typeof hashPDFPreviewSignature === 'function' &&
+      hashPDFPreviewSignature() === _pdfLastRenderedSignature &&
+      (document.body.classList.contains('photocopy-mode') ? 'mono' : 'color') === _pdfLastRenderedMode;
     const loadingEl = document.getElementById('pdf-preview-loading');
-    if (loadingEl) {
+    if (loadingEl && !willReuseCache) {
       loadingEl.style.display = 'flex';
       loadingEl.classList.add('active');
       const statusEl = document.getElementById('pdf-preview-loading-status');
