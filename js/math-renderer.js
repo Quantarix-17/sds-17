@@ -130,7 +130,24 @@ function processMathEquationsInContainer(container) {
 
     const delimiterRegex = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[\s\S]*?\$|\\\([\s\S]*?\\\)|\\begin\{[A-Za-z*]+\}[\s\S]*?\\end\{[A-Za-z*]+\})/g;
     // Include custom commands in bare math detection
-    const bareMathRegex = /(?:^|[\s(:=;,-])((?:\\(?:frac|dfrac|tfrac|sqrt|sum|int|lim|vec|bar|hat|dot|cdot|times|leq|geq|neq|approx|infty|alpha|beta|gamma|delta|theta|lambda|mu|sigma|pi|sin|cos|tan|log|ln|left|right|text|mathrm|mathbf|mathbb|ext|extker|extrange|operatorname)\b)[^\n]{0,260})(?=$|[\s.,;:!?)]|\n)/g;
+    // BUG FIX: this used to be `(?:\\...\b)[^\n]{0,260}` followed by a lookahead
+    // for the *next* delimiter/punctuation. Because the `[^\n]{0,260}` quantifier
+    // is greedy, the regex engine attempts the longest possible match first and
+    // only backtracks until the lookahead is satisfied — and since ordinary
+    // English prose contains spaces/punctuation every few characters, it would
+    // almost always backtrack only as far as the LAST qualifying delimiter within
+    // the 260-char window, not the first one after the command. In practice this
+    // meant a single recognized command anywhere in a sentence (e.g. "\text",
+    // "\sin", "\left") would swallow the rest of that sentence — and often the
+    // next one too — into a single KaTeX span, rendering entire paragraphs as
+    // broken/garbled math instead of the intended short expression.
+    // FIX: instead of "command + free text until some later delimiter", match
+    // the command plus only its actual brace-delimited argument(s), e.g.
+    // \text{ mL}, \frac{a}{b}, \sqrt{x+1}, \operatorname{ext ker}. This correctly
+    // captures commands with arguments containing spaces/punctuation (which a
+    // naive "stop at first delimiter" lazy-quantifier fix would truncate too
+    // early) while never spilling over into surrounding prose.
+    const bareMathRegex = /(?:^|[\s(:=;,-])(\\(?:frac|dfrac|tfrac|sqrt|sum|int|lim|vec|bar|hat|dot|cdot|times|leq|geq|neq|approx|infty|alpha|beta|gamma|delta|theta|lambda|mu|sigma|pi|sin|cos|tan|log|ln|left|right|text|mathrm|mathbf|mathbb|ext|extker|extrange|operatorname)\b(?:\s*\{[^{}]*\}){0,4})/g;
 
     textNodes.forEach(textNode => {
         const text = textNode.nodeValue;
