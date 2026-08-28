@@ -1,6 +1,7 @@
 // ========================================================================
 // MATH RENDERER - KaTeX equation processing and rendering
-// Fixed: custom macros with correct syntax, improved fallback
+// Fixed: custom macros with correct syntax, improved fallback,
+// unknown commands render as plain text
 // ========================================================================
 
 // ===== CUSTOM KATEX MACROS (CORRECTED) =====
@@ -233,8 +234,6 @@ function processMathEquationsInContainer(container) {
                     else if (part.startsWith('\\[')) mathPart = part.replace(/^\\\[|\\\]$/g, '');
                     else if (part.startsWith('\\begin{')) {
                         // keep as is, will be handled by createKatexSpanElement as display math
-                        // but we need to strip the delimiters? Actually we keep them as they are part of the LaTeX
-                        // We'll wrap the whole part as a display equation
                         mathPart = part;
                     }
                     fragment.appendChild(createKatexSpanElement(mathPart, true));
@@ -248,14 +247,10 @@ function processMathEquationsInContainer(container) {
             // No delimited math, but we might have bare LaTeX commands
             let last = 0;
             let matched = false;
-            // Use a regex to find \command patterns, but we need to capture the whole command with arguments
-            // We'll use a custom function to scan
             const cmdRegex = /\\[A-Za-z]+/g;
             let match;
             while ((match = cmdRegex.exec(text)) !== null) {
                 const startPos = match.index;
-                const cmdText = match[0];
-                // Extract full command with arguments
                 const extracted = extractLatexCommandWithArgs(text, startPos);
                 if (!extracted) continue;
                 const { cmd, args, endPos } = extracted;
@@ -277,6 +272,16 @@ function processMathEquationsInContainer(container) {
                     fragment.appendChild(createKatexSpanElement(latex, false));
                     last = endPos;
                     matched = true;
+                } else {
+                    // UNKNOWN COMMAND: render as plain text (remove backslash)
+                    // This prevents broken LaTeX from showing up.
+                    if (startPos > last) {
+                        fragment.appendChild(document.createTextNode(text.slice(last, startPos)));
+                    }
+                    // Insert the command name as plain text without backslash
+                    fragment.appendChild(document.createTextNode(cmd));
+                    last = endPos;
+                    matched = true;
                 }
             }
             if (!matched) {
@@ -291,8 +296,6 @@ function processMathEquationsInContainer(container) {
             }
         }
         if (textNode.parentNode) {
-            // Preserve whitespace: if the fragment has only text nodes, we can just replace.
-            // But we need to handle leading/trailing spaces.
             textNode.parentNode.replaceChild(fragment, textNode);
         }
     });
@@ -302,23 +305,12 @@ function processMathEquationsInContainer(container) {
 function repairVisibleEscapeSequencesInText(text) {
     let value = String(text || '');
     // First, handle actual escape sequences that are not part of LaTeX commands.
-    // We'll replace \n, \r, \t with their real characters, but only when they appear as standalone
-    // backslash + letter, not as part of a larger command.
-    // We'll scan for \ followed by n, r, t and ensure that the preceding character is not a backslash
-    // and the following is not a letter (to avoid matching \frac).
     value = value.replace(/\\([nrt])/g, (full, letter) => {
-        // We want to keep the backslash if it's part of a LaTeX command.
-        // Since we cannot know the context easily, we'll rely on the known command list:
-        // if the letter is part of a known command, we leave it as is.
-        // But here we are matching single letters, so if it's n, r, t, they are not commands.
-        // So we can safely replace.
         if (letter === 'n') return '\n';
         if (letter === 'r') return '\r';
         if (letter === 't') return '\t';
         return full;
     });
-    // Also handle double escaped from JSON: \\n -> \n, but we already handled above.
-    // For safety, we also replace \\\\ with single backslash? No, we keep double backslash as literal.
     return value;
 }
 
@@ -392,8 +384,7 @@ const RAW_LATEX_COMMAND_REGEX = /\\([A-Za-z]+)/;
 const MATH_CHARSET_RUN_REGEX = /[A-Za-z0-9+\-*/=<>≤≥.,;:(){}\[\]^_|'"~&×÷·°√∞≠≈∑∫πθλµσΩαβγδ\\ \t]+/g;
 
 function appendAutoWrappedLatex(fragment, textPart) {
-    // We'll scan for LaTeX commands and wrap only those with their arguments.
-    // Use the same extractor.
+    // Scan for LaTeX commands and wrap only known ones; unknown commands become plain text.
     let last = 0;
     const cmdRegex = /\\[A-Za-z]+/g;
     let match;
@@ -416,6 +407,14 @@ function appendAutoWrappedLatex(fragment, textPart) {
             }
             // Create the math span
             fragment.appendChild(createKatexSpanElement(latex, false));
+            last = endPos;
+        } else {
+            // UNKNOWN COMMAND: render as plain text (remove backslash)
+            if (startPos > last) {
+                fragment.appendChild(document.createTextNode(textPart.slice(last, startPos)));
+            }
+            // Insert the command name without the backslash
+            fragment.appendChild(document.createTextNode(cmd));
             last = endPos;
         }
     }
@@ -666,9 +665,6 @@ function convertKatexSpansToLatexSource(htmlString) {
         const latex = eq.getAttribute('data-latex') || eq.textContent || '';
         const isDisplay = eq.getAttribute('data-display') === 'true';
         const delimiter = isDisplay ? '$$' : '$';
-        // Check if the original content had \[...\] or \begin{...}
-        // We'll use a heuristic: if the latex contains \begin{...}\end{...} or is longer than a single line, use display.
-        // Actually we just use the data-display attribute.
         eq.parentNode.replaceChild(document.createTextNode(delimiter + latex + delimiter), eq);
     });
     return temp.innerHTML;
