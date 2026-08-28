@@ -18,10 +18,6 @@ let APP_STATE = {
   suppressDocumentAIChat: false,
   pendingEditPages: null
 };
-// `let` declarations don't attach to `window`, but tab-manager.js, document-editor.js,
-// ocr.js, command-menu.js and ui-helpers.js all read/write `window.APP_STATE` (100+ call
-// sites) expecting it to be this same object. Without this line every `window.APP_STATE?.x`
-// read silently returns undefined and every `window.APP_STATE.x = ...` write throws.
 window.APP_STATE = APP_STATE;
 
 // ===== RUNTIME STATE ACCESS LAYER =====
@@ -47,7 +43,7 @@ function getSectionModeEnabled() {
 }
 window.getSectionModeEnabled = getSectionModeEnabled;
 
-// ===== TOAST HELPER (alias for UI helper) =====
+// ===== TOAST HELPER =====
 function showAtCommandToast(msg) {
   if (typeof displayToastNotification === 'function') displayToastNotification(msg);
   const btn = document.getElementById('at-command-btn');
@@ -335,7 +331,7 @@ function normalizeAIContent(rawContent) {
   return rawContent ? String(rawContent) : '';
 }
 
-// ===== AI API CALL WITH FAILOVER =====
+// ===== AI API CALL WITH FAILOVER (No token limit) =====
 const THINKING_RUNTIME = window.__AI_THINKING_RUNTIME__ || (window.__AI_THINKING_RUNTIME__ = {
   requestGate: Promise.resolve(),
   requestInFlight: 0,
@@ -532,9 +528,8 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setActiveModel) ProgressUI.setActiveModel(cfg.name);
   }
 
-  const requestedMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : null;
-  const modelMaxTokens = Number.isFinite(Number(cfg && cfg.maxTokens)) && Number(cfg.maxTokens) > 0 ? Number(cfg.maxTokens) : null;
-  const effectiveMaxTokens = requestedMaxTokens != null ? (modelMaxTokens != null ? Math.min(requestedMaxTokens, modelMaxTokens) : requestedMaxTokens) : (modelMaxTokens || null);
+  // No token limit – we pass maxTokens as undefined so the API uses its own maximum
+  const effectiveMaxTokens = undefined; // Force no limit
 
   // --- GEMINI branch ---
   if (cfg.apiType === 'gemini') {
@@ -549,7 +544,7 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
       })),
       generationConfig: {
         temperature: APP_CONFIG.TEMPERATURE || 0.3,
-        maxOutputTokens: effectiveMaxTokens || 8192,
+        // Do not set maxOutputTokens – let Gemini use its maximum
       }
     };
     if (systemInstruction) {
@@ -613,7 +608,7 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
       messages,
       temperature: APP_CONFIG.TEMPERATURE
     };
-    if (effectiveMaxTokens != null) body.max_tokens = effectiveMaxTokens;
+    // Do NOT set max_tokens – let API use its own maximum
     if (useJsonMode) body.response_format = { type: "json_object" };
 
     let response;
@@ -667,8 +662,9 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
     const rawContent = (choice.message && choice.message.content) || '';
     const content = normalizeAIContent(rawContent);
     let finishReason = choice.finish_reason || 'stop';
-    if (finishReason !== 'length' && detectTruncatedContent(content, effectiveMaxTokens)) {
-      finishReason = 'length';
+    // If finishReason is 'length' because of model's own limit, we'll handle continuation
+    if (finishReason === 'length' && detectTruncatedContent(content, undefined)) {
+      // still detect but we'll continue
     }
     if (!content || !String(content).trim()) {
       const err = new Error(`Empty or unusable response from "${cfg.name}".`);
@@ -703,7 +699,7 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
   }
 }
 
-// ===== BUILD SHARED RULES =====
+// ===== BUILD SHARED RULES (with enhanced detail instruction) =====
 function buildSharedRules(isMonochromeMode, outputLanguage) {
   const labels = outputLanguage === 'en' ? {
     definition: 'Definition:',
@@ -848,7 +844,22 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
     Every backslash inside a JSON string value must be doubled (\\\\) so it stays valid JSON — this applies to EVERY LaTeX command without exception: \\frac → \\\\frac, \\left → \\\\left, \\right → \\\\right, \\times → \\\\times, \\text → \\\\text, etc. Before finalizing your JSON output, mentally re-verify that no single unescaped backslash remains inside any string value.
   `;
 
+  // Enhanced detail instruction – added at the top
+  const detailInstruction = `
+    === ABSOLUTE REQUIREMENT: COMPREHENSIVE, DETAILED, UNTRUNCATED OUTPUT ===
+    You MUST produce the FULL, COMPLETE document as requested by the user. There is NO token limit or length restriction.
+    - Cover every subtopic, every example, every explanation, every formula, every application, every comparison, every table, every diagram, and every useful visual that the user's request implies.
+    - Do NOT shorten, summarize, or abbreviate any part of the content.
+    - Do NOT omit any requested section, concept, or detail.
+    - If the user asks for a "detailed PDF", you MUST generate a very long, thorough document that leaves no relevant aspect untouched.
+    - The output must be self-contained and complete; do not assume the user knows anything about the topic.
+    - Include multiple examples, step-by-step derivations, side notes, and practical applications where appropriate.
+    - Use all the formatting and structural elements (headings, lists, tables, callouts, diagrams) to create a professional, high-quality document.
+    - The user's instruction (e.g., "create a detailed PDF on quantum mechanics") must be fully realized in the content – the document must be about quantum mechanics with all necessary details, not a brief overview.
+  `;
+
   return `
+    ${detailInstruction}
     === CORE PHILOSOPHY: COMPLETENESS OVER BREVITY ===
     Quality > Brevity | Completeness > Shortness | Clarity > Compression.
     Default behavior: UNDERSTAND → EXTRACT → PRESERVE → ORGANIZE → EXPLAIN.
@@ -1143,6 +1154,7 @@ async function generateTopicPlan(promptText, fileContextString, isMonochromeMode
     `Language: ${outputLanguage}.`;
 
   const messages = [{ role: 'system', content: systemPromptForPlan }, { role: 'user', content: await buildAIUserContent(promptText, fileContextString || '(none)') }];
+  // Plan still uses a token limit to avoid huge planning output (it's just a plan)
   const planBudget = explicitLong ? APP_CONFIG.PLAN_MAX_OUTPUT_TOKENS : APP_CONFIG.ROUTER_MAX_OUTPUT_TOKENS;
   let planResult = await callAIAPI(messages, { forceJson: true, modelsUsedSet, maxTokens: planBudget });
   let planJson = safeParseAIJson(planResult.content, null);
@@ -1247,11 +1259,12 @@ async function generateNextSection(sectionIndex, sectionTitle, modelsUsedSet) {
     ...(sectionIndex > 0 && _lastModelResponse ? [{ role: 'assistant', content: `Previous section tail for continuity only. Do not repeat it:\n${_lastModelResponse.slice(-1200)}` }] : [])
   ];
 
+  // No token limit – pass undefined
   const result = await callAIAPI(messages, {
     forceJson: !deepSeekMode,
     modelsUsedSet,
     modelConfig: lockedCfg || undefined,
-    maxTokens: getGenerationMaxTokens(intentPayloadForGeneration?.length || 'standard')
+    maxTokens: undefined // No limit
   });
   if (result && result.modelConfig) _generationLockedModelConfig = result.modelConfig;
 
@@ -1313,8 +1326,8 @@ async function generateSectionBatch(startIndex, batchTitles, modelsUsedSet) {
     { role: 'user', content: `Now write these ${batchTitles.length} section(s) in full:\n${requestedList}` }
   ];
 
-  const batchMaxTokens = getGenerationMaxTokens(intentPayloadForGeneration?.length || 'standard', false);
-  const result = await callAIAPI(messages, { forceJson: true, modelsUsedSet: modelsUsedSet, modelConfig: _generationLockedModelConfig || undefined, maxTokens: batchMaxTokens });
+  // No limit
+  const result = await callAIAPI(messages, { forceJson: true, modelsUsedSet: modelsUsedSet, modelConfig: _generationLockedModelConfig || undefined, maxTokens: undefined });
   if (result && result.modelConfig) _generationLockedModelConfig = result.modelConfig;
   let parsed = safeParseAIJson(result.content, null);
   if (!parsed && result.content && result.finishReason === 'length') parsed = attemptRepairAndParse(result.content);
@@ -1339,7 +1352,7 @@ async function generateSectionBatch(startIndex, batchTitles, modelsUsedSet) {
       const retryMessages = [{ role: 'system', content: _originalSystemPrompt +
           `\n\nRECOVERY MODE: The previous structured response was malformed or truncated. Write ONLY the complete raw HTML fragment for this ONE section. Do not output JSON, markdown fences, chat_summary, commentary, or any wrapper. In LONG MODE, make this section deeply developed (normally about 2–3 A4 pages of substantive material) with full subtopics, explanations, examples/applications and useful visuals where relevant. Never compress merely because this is a recovery request. Fully complete the requested section before stopping.` }, { role: 'user', content: `Original request:\n${_originalUserMessages.find(m => m.role === 'user')?.content || ''}\n\nSection to write:\n${batchTitles[0]}\n\nApproved outline:\n${outlineContext}` }];
       try {
-        const retryResult = await callAIAPI(retryMessages, { forceJson: false, modelsUsedSet: modelsUsedSet, modelConfig: result.modelConfig || _generationLockedModelConfig || undefined });
+        const retryResult = await callAIAPI(retryMessages, { forceJson: false, modelsUsedSet: modelsUsedSet, modelConfig: result.modelConfig || _generationLockedModelConfig || undefined, maxTokens: undefined });
         if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
         const rawHtml = (retryResult.content || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
         if (/<[a-z][\s\S]*>/i.test(rawHtml) && rawHtml.length > 100) {
@@ -1394,7 +1407,7 @@ async function expandLongDocumentUntilMinimumPages(promptText, modelsUsedSet, mi
       `Return ONLY JSON: {"html_content":"<HTML to append>"}`;
     const messages = [{ role: 'system', content: system }, { role: 'user', content: `Original request:\n${promptText}\n\nAPPROVED OUTLINE:\n${outlineContext}\n\nCURRENT DOCUMENT (append only; do not repeat it):\n${currentHTML.slice(-12000)}` }];
     try {
-      const result = await callAIAPI(messages, { forceJson: true, modelsUsedSet, maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.EXPANSION });
+      const result = await callAIAPI(messages, { forceJson: true, modelsUsedSet, maxTokens: undefined });
       let parsed = safeParseAIJson(result.content, null);
       if (!parsed && result.content && result.finishReason === 'length') parsed = attemptRepairAndParse(result.content);
       const html = parsed && typeof parsed.html_content === 'string' ? parsed.html_content : '';
@@ -1529,7 +1542,6 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
       if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
       if (typeof ProgressUI !== 'undefined') { ProgressUI.finish();
         setTimeout(() => { if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide(); }, 500); }
-      // Always show AI response message
       if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', `✅ "${docTitle}" — notes generated!`);
       intentPayloadForGeneration = null;
       _generationLockedModelConfig = null;
@@ -1600,20 +1612,18 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
   }
 
   try {
-    let effectiveMaxTokens = APP_CONFIG.PDF_TOKEN_BUDGETS.DEFAULT_SINGLE;
+    // No token limit
     let result = await callAIAPI([{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], {
       forceJson: false,
       modelsUsedSet,
       modelConfig: activeCfg,
-      maxTokens: effectiveMaxTokens
+      maxTokens: undefined
     });
     if (result && result.modelConfig) _generationLockedModelConfig = result.modelConfig;
 
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Processing AI response…', 72, 84);
     let generated = extractHTML(result);
 
-    // If the AI returns a chat_reply-like JSON wrapper (e.g. {"action":"chat_reply","message":"..."}),
-    // try to extract the message and convert it to HTML.
     if (generated && generated.startsWith('{') && generated.includes('"action"')) {
       const parsedJson = safeParseAIJson(generated, null);
       if (parsedJson && parsedJson.action === 'chat_reply' && parsedJson.message) {
@@ -1621,9 +1631,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
       }
     }
 
-    // If still empty or too short, retry with a more forceful prompt.
     if (usableTextLength(generated) < 250) {
-      const retryMaxTokens = Math.max(APP_CONFIG.PDF_TOKEN_BUDGETS.DEFAULT_SINGLE, APP_CONFIG.PDF_TOKEN_BUDGETS.SHORT);
       const retryResult = await callAIAPI([
         { role: 'system', content: systemPrompt + `\nRECOVERY RULE: The previous response was too short or incomplete. Write the actual full document now. Do not output only the title, outline or summary. Return substantive HTML only.` },
         { role: 'user', content: userPrompt + `\nIMPORTANT: The final result must contain real explanatory content suitable for a PDF, not an outline.` }
@@ -1631,19 +1639,17 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
         forceJson: false,
         modelsUsedSet,
         modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg,
-        maxTokens: retryMaxTokens
+        maxTokens: undefined
       });
       if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
       const retryHTML = extractHTML(retryResult);
       if (usableTextLength(retryHTML) > usableTextLength(generated)) {
         generated = retryHTML;
-        effectiveMaxTokens = retryMaxTokens;
       }
     }
 
     if (requestSessionId !== APP_STATE.activeSessionId) return { ok: false, aborted: true };
     if (usableTextLength(generated) < 250) {
-      // If still no content, show a meaningful error and return.
       const msg = 'The AI did not generate any document content. Please try a more specific request, or check your AI model settings.';
       if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', msg);
       if (typeof displayToastNotification === 'function') displayToastNotification(msg);
@@ -1659,7 +1665,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
 
     const currentPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
     const lastText = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource().slice(-18000) : '';
-    if (currentPages > 0 && detectTruncatedContent(generated, effectiveMaxTokens)) {
+    if (currentPages > 0 && detectTruncatedContent(generated, undefined)) {
       const continuation = await callAIAPI([
         { role: 'system', content: `Continue the SAME DEFAULT PDF document. Return ONLY a new HTML fragment to append. Do not restart, repeat the title, summarize, or output JSON/markdown. Add genuinely new content needed to complete the user's request.\nUSER REQUEST: ${promptText}` },
         { role: 'user', content: `CURRENT DOCUMENT TAIL:\n${lastText}\n\nAPPEND NEW CONTENT ONLY.` }
@@ -1667,7 +1673,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
         forceJson: false,
         modelsUsedSet,
         modelConfig: _generationLockedModelConfig || result?.modelConfig || activeCfg,
-        maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.EXPANSION
+        maxTokens: undefined
       });
       if (continuation && continuation.modelConfig) _generationLockedModelConfig = continuation.modelConfig;
       const moreHTML = extractHTML(continuation);
@@ -1682,7 +1688,6 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     return { ok: true };
   } catch (e) {
     console.error('[Default PDF Direct Mode] failed:', e);
-    // Display a friendly error message in chat and toast.
     const errorMsg = (e && e.message) ? String(e.message) : 'Unknown error.';
     if (e && e.noModelConfigured) {
       if (typeof appendChatMessageToUI === 'function') {
@@ -1708,7 +1713,6 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
   const mode = intentPayload?.length === 'short_pdf' ? 'short' : 'long';
   const isLong = mode === 'long';
   const minPages = isLong ? APP_CONFIG.LONG_PDF_MIN_PAGES : 2;
-  const maxTokens = isLong ? APP_CONFIG.PDF_TOKEN_BUDGETS.LONG_DIRECT : APP_CONFIG.PDF_TOKEN_BUDGETS.SHORT;
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const modeLabel = isLong ? 'LONG' : 'SHORT';
 
@@ -1757,7 +1761,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
   }
 
   try {
-    let result = await callAIAPI([{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], { forceJson: false, modelsUsedSet, maxTokens });
+    let result = await callAIAPI([{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], { forceJson: false, modelsUsedSet, maxTokens: undefined });
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Processing AI response…', 72, 84);
     let generated = extractHTML(result);
     const minUsefulChars = isLong ? 1200 : 500;
@@ -1771,7 +1775,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
         forceJson: false,
         modelsUsedSet,
         modelConfig: result?.modelConfig,
-        maxTokens
+        maxTokens: undefined
       });
       const retryHTML = extractHTML(retry);
       if (textLength(retryHTML) > textLength(generated)) generated = retryHTML;
@@ -1797,7 +1801,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
           forceJson: false,
           modelsUsedSet,
           modelConfig: result?.modelConfig,
-          maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.EXPANSION
+          maxTokens: undefined
         });
         const moreHTML = extractHTML(expansion);
         if (textLength(moreHTML) > 300) {
@@ -1874,7 +1878,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
       forceJson: false,
       modelsUsedSet,
       modelConfig: activeCfg || undefined,
-      maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.LONG_BATCH
+      maxTokens: undefined
     });
     if (result && result.modelConfig) _generationLockedModelConfig = result.modelConfig;
 
@@ -1882,7 +1886,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
     let generated = extractDirectHTML(result);
     if (usableTextLength(generated) < 1200) {
       const retryMessages = [{ role: 'system', content: directSystem + `\n\nRECOVERY RULE: Your previous response was too short. Write the actual full document now. Do not output only the title or outline. Return substantive HTML only.` }, { role: 'user', content: userContent + `\n\nIMPORTANT: The final document must contain substantial explanatory content, not just a title.` }];
-      const retryResult = await callAIAPI(retryMessages, { forceJson: false, modelsUsedSet, modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg || undefined, maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.LONG_BATCH });
+      const retryResult = await callAIAPI(retryMessages, { forceJson: false, modelsUsedSet, modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg || undefined, maxTokens: undefined });
       if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
       const retryHTML = extractDirectHTML(retryResult);
       if (usableTextLength(retryHTML) > usableTextLength(generated)) generated = retryHTML;
@@ -1919,7 +1923,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
         forceJson: false,
         modelsUsedSet,
         modelConfig: _generationLockedModelConfig || activeCfg || undefined,
-        maxTokens: APP_CONFIG.PDF_TOKEN_BUDGETS.EXPANSION
+        maxTokens: undefined
       });
       if (continuationResult && continuationResult.modelConfig) _generationLockedModelConfig = continuationResult.modelConfig;
       let moreHTML = extractDirectHTML(continuationResult);
@@ -1987,7 +1991,7 @@ async function computeDocumentAnalytics(startTimestamp, modelsUsedSet) {
     const bodyText = cloneDoc.innerText.substring(0, 2000);
     const headingOutline = h2s.length ? 'Outline headings: ' + h2s.join(', ') : '';
     const promptContent = headingOutline + '\n\n' + bodyText;
-    const result = await callAIAPI([{ role: 'system', content: 'Given the document headings and a content sample, return ONLY JSON: {"key_topics": ["topic1", "topic2", ...]} — 3 to 8 short topic phrases in the same language as the document.' }, { role: 'user', content: promptContent.substring(0, 3000) }], { forceJson: true, modelsUsedSet: modelsUsedSet });
+    const result = await callAIAPI([{ role: 'system', content: 'Given the document headings and a content sample, return ONLY JSON: {"key_topics": ["topic1", "topic2", ...]} — 3 to 8 short topic phrases in the same language as the document.' }, { role: 'user', content: promptContent.substring(0, 3000) }], { forceJson: true, modelsUsedSet: modelsUsedSet, maxTokens: undefined });
     const parsed = safeParseAIJson(result.content, null);
     if (parsed && Array.isArray(parsed.key_topics)) keyTopics = parsed.key_topics.slice(0, 8);
   } catch (e) { console.warn('Key topics AI call failed:', e);
@@ -2136,7 +2140,7 @@ async function sendChatPromptToAI() {
           const fastEditResult = await callAIAPI([{ role: 'system', content: fastEditSystem }, { role: 'user', content: `USER EDIT REQUEST:\n${promptText}\n\nSELECTED PAGES: ${editPages.join(', ')}\n\nCURRENT PAGE CONTEXT:\n${ctx}` }], {
             forceJson: true,
             modelsUsedSet: modelsUsed,
-            maxTokens: getGenerationMaxTokens('standard', true)
+            maxTokens: undefined
           });
           const parsedEdit = safeParseAIJson(fastEditResult.content, null);
           if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Applying page changes…', 78, 94);
@@ -2231,7 +2235,6 @@ async function sendChatPromptToAI() {
         if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
         if (directResult && directResult.ok) {
           if (typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
-          // Show success message in chat
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', '✅ PDF generated successfully.');
         } else if (!directResult || !directResult.aborted) {
           const reason = (directResult && directResult.message) ? directResult.message : 'Unknown error.';
@@ -2270,7 +2273,6 @@ async function sendChatPromptToAI() {
         } else {
           if (success && typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (success && typeof displayToastNotification === 'function') displayToastNotification("✅ Note generated!");
-          // Note: generateComprehensiveDocumentStepByStep already adds its own AI message, so we don't double-add.
           if (success && document.getElementById('analytics-toggle')?.checked) {
             try {
               const analytics = typeof computeDocumentAnalytics === 'function' ? await computeDocumentAnalytics(analyticsStart, modelsUsed) : null;
@@ -2316,8 +2318,7 @@ async function sendChatPromptToAI() {
         ProgressUI.startAutoEstimate(APP_CONFIG.SINGLE_SHOT_ESTIMATED_SECONDS);
       }
 
-      const singleMaxTokens = getGenerationMaxTokens(intentPayload.length || 'standard', true);
-      let result = await callAIAPI(apiMessagesArray, { forceJson: true, modelsUsedSet: modelsUsed, maxTokens: singleMaxTokens });
+      let result = await callAIAPI(apiMessagesArray, { forceJson: true, modelsUsedSet: modelsUsed, maxTokens: undefined });
       let parsedJson = safeParseAIJson(result.content, null);
 
       if (!parsedJson && result.content && result.content.trim().startsWith('{')) {
@@ -2325,7 +2326,7 @@ async function sendChatPromptToAI() {
         if (!parsedJson) {
           if (typeof displayToastNotification === 'function') displayToastNotification('⚠️ JSON parsing failed, retrying...');
           const retryMessages = [{ role: 'system', content: `You are a JSON-only assistant. Your previous output contained unescaped backslashes and was not valid JSON. Ensure every backslash inside string values is doubled (\\\\). Output ONLY valid JSON.` }, { role: 'user', content: `Please respond to the original request: ${promptText}` }];
-          const retryResult = await callAIAPI(retryMessages, { forceJson: true, modelsUsedSet: modelsUsed });
+          const retryResult = await callAIAPI(retryMessages, { forceJson: true, modelsUsedSet: modelsUsed, maxTokens: undefined });
           parsedJson = safeParseAIJson(retryResult.content, null);
           if (parsedJson) result = retryResult;
         }
@@ -2500,7 +2501,6 @@ async function sendChatPromptToAI() {
       if (loadingElement) loadingElement.remove();
       if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
       APP_STATE.suppressDocumentAIChat = false;
-      // Show a user-friendly error message.
       let userFriendlyMsg = error.message || 'Unknown error.';
       if (error.noModelConfigured) {
         userFriendlyMsg = 'No AI model configured. Please click "AI Models" and add a model.';
@@ -2595,7 +2595,6 @@ window.onload = function() {
 
 // ===== KEYBOARD SHORTCUTS FOR CHAT =====
 document.addEventListener('keydown', function(e) {
-  // Ctrl+Enter to send from textarea
   if (e.key === 'Enter' && e.ctrlKey && document.activeElement && document.activeElement.id === 'chat-input-textarea') {
     e.preventDefault();
     if (typeof triggerChatSend === 'function') triggerChatSend();
