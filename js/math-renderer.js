@@ -4,36 +4,45 @@
 // ========================================================================
 
 // ===== CUSTOM KATEX MACROS (CORRECTED) =====
-// Keys must be WITHOUT backslash (e.g., "extker" not "\\extker")
+// BUG FIX: KaTeX's `macros` option requires each key to INCLUDE the leading
+// backslash (e.g. "\\extker", not "extker") — that's how KaTeX's macro
+// expander matches control sequences it encounters while parsing. The
+// previous version of this function used bare keys like "extker"/"R", which
+// KaTeX never matches against \extker / \R in the actual LaTeX source. The
+// result wasn't a thrown error (this file calls katex.render with
+// throwOnError:false and strict:'ignore'), so nothing looked "broken" by
+// this file's own isKatexSpanBroken() check — but visually every equation
+// using one of these macros rendered as literal red "\extker"-style text
+// instead of the intended notation, i.e. silently not working.
 function getCustomKaTeXMacros() {
     return {
         // Linear algebra / extension notation (user-requested)
-        "extker": "\\operatorname{ext\\,ker}",
-        "extrange": "\\operatorname{ext\\,range}",
-        "ext": "\\operatorname{ext}",
-        
+        "\\extker": "\\operatorname{ext\\,ker}",
+        "\\extrange": "\\operatorname{ext\\,range}",
+        "\\ext": "\\operatorname{ext}",
+
         // Common math operators (optional but safe)
-        "R": "\\mathbb{R}",
-        "C": "\\mathbb{C}",
-        "Q": "\\mathbb{Q}",
-        "Z": "\\mathbb{Z}",
-        "N": "\\mathbb{N}",
-        "F": "\\mathbb{F}",
-        "K": "\\mathbb{K}",
-        "P": "\\mathbb{P}",
-        "E": "\\mathbb{E}",
-        "V": "\\mathbb{V}",
-        "U": "\\mathbb{U}",
-        "O": "\\mathcal{O}",
-        "I": "\\mathcal{I}",
-        "J": "\\mathcal{J}",
-        "L": "\\mathcal{L}",
-        "M": "\\mathcal{M}",
-        "S": "\\mathcal{S}",
-        "T": "\\mathcal{T}",
-        "W": "\\mathcal{W}",
-        "X": "\\mathcal{X}",
-        "Y": "\\mathcal{Y}"
+        "\\R": "\\mathbb{R}",
+        "\\C": "\\mathbb{C}",
+        "\\Q": "\\mathbb{Q}",
+        "\\Z": "\\mathbb{Z}",
+        "\\N": "\\mathbb{N}",
+        "\\F": "\\mathbb{F}",
+        "\\K": "\\mathbb{K}",
+        "\\P": "\\mathbb{P}",
+        "\\E": "\\mathbb{E}",
+        "\\V": "\\mathbb{V}",
+        "\\U": "\\mathbb{U}",
+        "\\O": "\\mathcal{O}",
+        "\\I": "\\mathcal{I}",
+        "\\J": "\\mathcal{J}",
+        "\\L": "\\mathcal{L}",
+        "\\M": "\\mathcal{M}",
+        "\\S": "\\mathcal{S}",
+        "\\T": "\\mathcal{T}",
+        "\\W": "\\mathcal{W}",
+        "\\X": "\\mathcal{X}",
+        "\\Y": "\\mathcal{Y}"
     };
 }
 
