@@ -14,7 +14,7 @@ function displayToastNotification(msg) {
   toastHideTimer = setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// ===== GLOBAL PROGRESS UI =====
+// ===== GLOBAL PROGRESS UI (MODERN WHITE DESIGN) =====
 const ProgressUI = {
   _interval: null,
   _startTime: 0,
@@ -29,6 +29,8 @@ const ProgressUI = {
   _stageStartedAt: 0,
   _previewContainer: null,
   _fileProgressItems: new Map(),
+  _pageCount: 0,
+  _totalPages: 0,
 
   _els() {
     return {
@@ -41,7 +43,8 @@ const ProgressUI = {
       preview: document.getElementById('progress-live-preview'),
       badge: document.getElementById('progress-model-badge'),
       scope: document.getElementById('progress-scope'),
-      steps: document.getElementById('progress-steps')
+      steps: document.getElementById('progress-steps'),
+      pageCount: document.getElementById('progress-page-count')
     };
   },
 
@@ -123,7 +126,21 @@ const ProgressUI = {
         this._setPercent(Math.max(this._lastPct, target));
         if (time) time.textContent = `Elapsed ${this._formatTime(elapsed)} • Working…`;
       }
+      
+      // Update page count if set
+      this._updatePageCountDisplay();
     }, 250);
+  },
+
+  _updatePageCountDisplay() {
+    const el = document.getElementById('progress-page-count');
+    if (!el) return;
+    if (this._totalPages > 0) {
+      el.textContent = `📄 Page ${this._pageCount} of ${this._totalPages}`;
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
   },
 
   show(title, subtitle) {
@@ -145,11 +162,14 @@ const ProgressUI = {
     this._stageStartPct = 0;
     this._stageEndPct = 0;
     this._stageStartedAt = this._startTime;
+    this._pageCount = 0;
+    this._totalPages = 0;
     this._setPercent(0, true);
     this._fileProgressItems.clear();
     if (e.preview) e.preview.innerHTML = '';
     this._previewContainer = e.preview;
     this._setVisualStage(1);
+    this._updatePageCountDisplay();
 
     const cancel = document.getElementById('cancel-processing-btn');
     if (cancel) cancel.disabled = false;
@@ -226,6 +246,7 @@ const ProgressUI = {
     const e = this._els();
     if (e.fill) e.fill.classList.remove('indeterminate');
     if (e.time) e.time.textContent = `Done • ${this._elapsed()}`;
+    this._updatePageCountDisplay();
   },
 
   setActiveModel(name) {
@@ -243,8 +264,26 @@ const ProgressUI = {
     if (e.badge) e.badge.textContent = '';
     if (e.scope) e.scope.textContent = '';
     if (e.fill) e.fill.classList.remove('indeterminate');
+    this._pageCount = 0;
+    this._totalPages = 0;
+    this._updatePageCountDisplay();
   },
 
+  // === PDF PAGE COUNT TRACKING ===
+  setPageCount(current, total) {
+    this._pageCount = Math.max(0, Number(current) || 0);
+    this._totalPages = Math.max(0, Number(total) || 0);
+    this._updatePageCountDisplay();
+  },
+
+  incrementPage() {
+    if (this._totalPages > 0 && this._pageCount < this._totalPages) {
+      this._pageCount++;
+      this._updatePageCountDisplay();
+    }
+  },
+
+  // === FILE PROGRESS ===
   addFileProgress(key, fileName, phase = 'Queued', meta = '') {
     if (!this._previewContainer) return null;
     const existing = this._fileProgressItems.get(key);
@@ -580,7 +619,6 @@ function setMobileView(viewName) {
     if (typeof switchPreviewTab === 'function') switchPreviewTab('pdf');
   } else if (viewName === 'editor') {
     if (typeof switchPreviewTab === 'function') switchPreviewTab('editor');
-    // Refit A4 pages after the editor panel becomes visible on mobile
     requestAnimationFrame(() => {
       try { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); } catch (_) {}
       setTimeout(() => {
@@ -627,7 +665,9 @@ function resetCancellationState() {
 async function waitWhilePaused() {
   // No-op - kept for compatibility
   return;
-  // ============================================================
+}
+
+// ============================================================
 // WINDOW EXPOSURE – UI Helpers
 // ============================================================
 window.toggleDarkMode = toggleDarkMode;
@@ -651,4 +691,3 @@ window.toggleTopbarMenu = toggleTopbarMenu;
 window.closeTopbarMenu = closeTopbarMenu;
 window.togglePhotocopyMode = togglePhotocopyMode;
 window.updateModeButtonText = updateModeButtonText;
-}
