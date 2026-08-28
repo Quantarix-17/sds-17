@@ -886,7 +886,7 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced + Scrollable) =====
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   const isExam = document.body.classList.contains('exam-document');
 
@@ -1046,7 +1046,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== COMPUTE TRUE PDF PAGES (WITH IMPROVED MCQ/EXAM HANDLING) =====
+// ===== COMPUTE TRUE PDF PAGES (UPDATED: shrink all pages, filter empty) =====
 async function computeTruePDFPages(htmlOverride) {
   const isExam = document.body.classList.contains('exam-document');
   const rawHtml = htmlOverride !== undefined ? htmlOverride : (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '');
@@ -1114,21 +1114,34 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
+  // --- Force shrink EVERY page to fit, not just overflow ones ---
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
+    // Always try to fit
+    if (typeof shrinkPageToFit === 'function') {
+      shrinkPageToFit(page);
+    }
+    // Double-check and apply stronger shrink if still overflowing
     if (!pageFits(page)) {
-      if (typeof shrinkPageToFit === 'function') shrinkPageToFit(page);
+      if (typeof shrinkPageToFit === 'function') {
+        shrinkPageToFit(page, [1, 0.92, 0.85, 0.78, 0.72, 0.66]);
+      }
     }
   }
 
+  // --- Filter out completely empty pages or pages with only footer ---
   const pages = pageEls.map(el => ({
     el,
     html: el.innerHTML,
     overflow: typeof pageFits === 'function' ? !pageFits(el) : false,
     brokenEquations: typeof findBrokenEquations === 'function' ? findBrokenEquations(el) : [],
     brokenDiagrams: typeof findBrokenDiagrams === 'function' ? findBrokenDiagrams(el) : []
-  })).filter(p => p.html && p.html.trim());
+  })).filter(p => {
+    const text = (p.el.innerText || '').trim();
+    const hasVisibleContent = text.length > 0 || p.el.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper');
+    return hasVisibleContent;
+  });
 
   return { offscreen, pages };
 }
@@ -1205,7 +1218,7 @@ function applyLocalMarginSafetyFixes(result) {
   }
 }
 
-// ===== SWITCH PREVIEW TAB (FIXED: use !important to guarantee visibility) =====
+// ===== SWITCH PREVIEW TAB =====
 function switchPreviewTab(tabName) {
   const docView = document.getElementById('document-view-container');
   const pdfView = document.getElementById('pdf-view-container');
@@ -1215,13 +1228,11 @@ function switchPreviewTab(tabName) {
   const btnEditorDesktop = document.getElementById('tab-editor-btn-desktop');
   const btnPdfDesktop = document.getElementById('tab-pdf-btn-desktop');
 
-  // Update button states
   if (btnEditor) btnEditor.classList.toggle('active', tabName === 'editor');
   if (btnPdf) btnPdf.classList.toggle('active', tabName === 'pdf');
   if (btnEditorDesktop) btnEditorDesktop.classList.toggle('active', tabName === 'editor');
   if (btnPdfDesktop) btnPdfDesktop.classList.toggle('active', tabName === 'pdf');
 
-  // Force visibility with !important to prevent CSS overrides
   const setDisplay = (el, display) => {
     if (el) el.style.setProperty('display', display, 'important');
   };
@@ -1230,7 +1241,6 @@ function switchPreviewTab(tabName) {
     setDisplay(docView, 'flex');
     setDisplay(toolbar, 'flex');
     setDisplay(pdfView, 'none');
-    // Remove any leftover render host
     const strayHost = document.getElementById('image-pdf-render-host');
     if (strayHost && strayHost.parentNode) strayHost.parentNode.removeChild(strayHost);
     if (typeof requestAnimationFrame === 'function') {
@@ -1240,11 +1250,10 @@ function switchPreviewTab(tabName) {
         setTimeout(() => { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); }, 400);
       });
     }
-  } else { // pdf
+  } else {
     setDisplay(docView, 'none');
     setDisplay(toolbar, 'none');
     setDisplay(pdfView, 'flex');
-    // Ensure PDF container takes full space
     if (pdfView) {
       pdfView.style.flexDirection = 'column';
       pdfView.style.height = '100%';
@@ -1407,7 +1416,7 @@ function splitOversizedTableToFit(pageEl, createContinuationPage) {
   return newPages;
 }
 
-// ===== UPDATED splitPlainTextElement with math re‑processing =====
+// ===== UPDATED splitPlainTextElement =====
 async function splitPlainTextElement(node, currentPage, createPage) {
     const textContent = node.textContent || '';
     const words = textContent.trim().split(/\s+/).filter(Boolean);
@@ -1422,7 +1431,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     let didSplit = false;
 
     const checkFit = async (el) => {
-        // Re-process math on the page after adding content
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
         await waitForImagesToLoad(page);
@@ -1449,7 +1457,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
                                 subChunk.remove();
                                 if (pageHasContent(page)) {
                                     page = createPage();
-                                    // Re-process math on the new page
                                     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
                                     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
                                 }
@@ -1496,7 +1503,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
                 if (remainingWords.length > 0) {
                     const remainingText = remainingWords.join(' ');
                     const newPage = createPage();
-                    // Re-process math on the new page
                     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(newPage);
                     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(newPage);
                     const newChunk = cloneElementShell(node);
@@ -1516,7 +1522,6 @@ async function splitPlainTextElement(node, currentPage, createPage) {
             page.appendChild(chunk);
             chunk.textContent = text;
         }
-        // Ensure math is processed on the final page
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
         return { page, didSplit: false };
@@ -1525,14 +1530,13 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     return { page, didSplit };
 }
 
-// ===== appendNodeWithPagination (updated with math processing safety) =====
+// ===== appendNodeWithPagination (updated: fit check + shrink for non‑breakable nodes) =====
 async function appendNodeWithPagination(node, currentPage, createPage) {
     if (node.nodeType === Node.TEXT_NODE) {
         if (!node.textContent.trim()) return currentPage;
         const wrapper = document.createElement('p');
         wrapper.textContent = node.textContent.trim();
         const result = await splitPlainTextElement(wrapper, currentPage, createPage);
-        // Ensure math is processed on the final page
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(result.page);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(result.page);
         return result.page;
@@ -1554,7 +1558,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
             return currentPage;
         }
 
-        // Check if the entire quiz fits
         const testClone = node.cloneNode(true);
         const tempPage = currentPage.cloneNode(true);
         const footer = tempPage.querySelector('.page-footer-number');
@@ -1602,7 +1605,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
             const itemClone = item.cloneNode(true);
             quizContainer.appendChild(itemClone);
 
-            // Check fit
             const testPage = currentPageForQuiz.cloneNode(true);
             const footer2 = testPage.querySelector('.page-footer-number');
             if (footer2) footer2.remove();
@@ -1627,7 +1629,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
                 quizContainer.removeChild(itemClone);
                 if (quizHasContent) {
                     currentPageForQuiz = createPage();
-                    // Process math on new page
                     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
                     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
                     quizContainer = document.createElement('div');
@@ -1648,7 +1649,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
                 quizHasContent = true;
             }
         }
-        // Ensure math is processed on the final page
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
         return currentPageForQuiz;
@@ -1692,25 +1692,32 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
     if (isBreakableText) {
         if (pageHasContent(currentPage)) currentPage = createPage();
         const result = await splitPlainTextElement(node, currentPage, createPage);
-        // Already processed inside splitPlainTextElement
         return result.page;
     }
 
     if (childElements.length && !/^(IMG|SVG|CANVAS|TABLE|HR)$/i.test(node.tagName)) {
         if (pageHasContent(currentPage)) currentPage = createPage();
         const result = await splitChildFlowElement(node, currentPage, createPage);
-        // Ensure math on final page
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(result.page);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(result.page);
         return result.page;
     }
 
+    // --- For non‑breakable nodes (like IMG, TABLE, SVG), create new page and try to shrink ---
     if (pageHasContent(currentPage)) currentPage = createPage();
     const finalClone = appendClone(currentPage, node);
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(finalClone);
     await waitForImagesToLoad(finalClone);
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(finalClone);
+
+    // If it still doesn't fit, try to shrink the whole page
+    if (!pageFits(currentPage)) {
+        if (typeof shrinkPageToFit === 'function') {
+            shrinkPageToFit(currentPage);
+        }
+    }
+
     return currentPage;
 }
 
@@ -1754,7 +1761,6 @@ async function splitListElement(node, currentPage, createPage) {
         if (!pageFits(page)) {
             list.removeChild(itemClone);
             page = createPage();
-            // Process math on new page
             if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
             if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
             list = cloneElementShell(node);
@@ -1787,7 +1793,6 @@ async function splitChildFlowElement(node, currentPage, createPage) {
         if (!pageFits(page)) {
             shell.removeChild(childClone);
             page = createPage();
-            // Process math on new page
             if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
             if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
             shell = cloneElementShell(node);
