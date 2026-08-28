@@ -699,7 +699,7 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
   }
 }
 
-// ===== BUILD SHARED RULES (with enhanced detail instruction) =====
+// ===== BUILD SHARED RULES =====
 function buildSharedRules(isMonochromeMode, outputLanguage) {
   const labels = outputLanguage === 'en' ? {
     definition: 'Definition:',
@@ -743,7 +743,7 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
   const sourceInterpretationRules = `
     === SOURCE / ATTACHMENT INTERPRETATION RULES ===
     When attached files are provided, distinguish substantive subject matter from document-control metadata.
-    Page numbers, page labels, filenames, repeated running headers/footers, OCR markers, publisher/navigation text and similar artifacts are NOT automatically content to answer with.
+    Page numbers, page labels, repeated running headers/footers, OCR markers, publisher/navigation text and similar artifacts are NOT automatically content to answer with.
     Use metadata only to identify the source or topic. For explain, summarize, teach, analyze, or answer-from-file tasks, answer from the substantive material and ignore navigation/formatting artifacts unless explicitly asked.
     Never treat a page number, filename, book title, or repeated header as the requested explanation merely because it appears in the extracted source.
   `;
@@ -1562,7 +1562,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
   }
 }
 
-// ===== GENERATE DEFAULT PDF DIRECT MODE (with proper chat response) =====
+// ===== GENERATE DEFAULT PDF DIRECT MODE =====
 async function generateDefaultPDFDirectMode(promptText, fileContextString, isMonochromeMode, isEmptyCanvas, isReplaceIntent, modelsUsedSet, intentPayload) {
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const existingHTML = (!isEmptyCanvas && !isReplaceIntent) ? (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '') : '';
@@ -2040,7 +2040,129 @@ function validateAIActionHandlers() {
   return true;
 }
 
-// ===== MAIN CHAT FUNCTION =====
+// ============================================================
+// REFINE / REFINE EQUATION HANDLERS
+// ============================================================
+
+async function handleRefineAction(promptText, intentPayload, pageContext, modelsUsedSet) {
+  const isEquationRefine = intentPayload.intent === 'refine_equation';
+  const targetPages = intentPayload.editPages || (intentPayload.pageTarget ? [intentPayload.pageTarget] : null);
+  const isMonochromeMode = document.body.classList.contains('photocopy-mode');
+  const outputLanguage = intentPayload.language || detectOutputLanguage(promptText);
+
+  // Determine target pages: if we have editPages from @page, use them; otherwise get all pages
+  let pagesToRefine = [];
+  const container = document.getElementById('document-view-container');
+  if (!container) { throw new Error('No document container found.'); }
+  const allPages = Array.from(container.querySelectorAll('.doc-page-canvas'));
+  if (targetPages && targetPages.length) {
+    pagesToRefine = targetPages.map(n => {
+      const idx = n - 1;
+      return idx >= 0 && idx < allPages.length ? allPages[idx] : null;
+    }).filter(Boolean);
+  } else {
+    // If no specific page, refine all pages? But refine typically targets something.
+    // We'll default to first page if no target, but better to ask user.
+    if (allPages.length) pagesToRefine = [allPages[0]];
+  }
+  if (!pagesToRefine.length) {
+    throw new Error('No valid pages to refine. Please specify a page number with @page or select a page.');
+  }
+
+  // Build context for each page
+  let contextString = '';
+  pagesToRefine.forEach((page, idx) => {
+    const clone = page.cloneNode(true);
+    clone.querySelectorAll('.page-footer-number').forEach(f => f.remove());
+    const html = typeof convertKatexSpansToLatexSource === 'function' ? convertKatexSpansToLatexSource(clone.innerHTML) : clone.innerHTML;
+    const pageNum = allPages.indexOf(page) + 1;
+    contextString += `\n[PAGE ${pageNum} — EDIT THIS PAGE]\n${html}\n[/PAGE ${pageNum}]\n`;
+  });
+
+  const refineInstruction = isEquationRefine
+    ? `REFINE EQUATION MODE: Focus ONLY on fixing LaTeX/KaTeX equations and math rendering. Do NOT change any wording, text, structure, or non-math content. Correct delimiter errors, missing backslashes, wrong commands, and ensure all equations render properly.`
+    : `REFINE MODE: Improve the content while preserving all useful information. Fix grammar, clarity, structure, and formatting. Do NOT add new information that wasn't there; do NOT remove useful content.`;
+
+  const systemPrompt =
+    `You are a document refinement AI. ${refineInstruction}\n` +
+    `Return ONLY valid JSON. For one page, use: {"action":"update_page","page_number":<number>,"new_html":"<full HTML of that page>","chat_summary":"..."}\n` +
+    `For multiple pages, use: {"action":"update_pages","updates":[{"page_number":1,"new_html":"..."}, ...],"chat_summary":"..."}\n` +
+    `Preserve ALL page numbers exactly as given. Do not change any content that does not need refinement. The updated HTML must be complete and self-contained for each page (including any existing headings, tables, etc.).`;
+
+  const userMessages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `USER REQUEST:\n${promptText}\n\nPAGES TO REFINE:\n${contextString}` }
+  ];
+
+  // Call AI
+  const result = await callAIAPI(userMessages, {
+    forceJson: true,
+    modelsUsedSet: modelsUsedSet,
+    maxTokens: undefined
+  });
+
+  let parsed = safeParseAIJson(result.content, null);
+  if (!parsed && result.content && result.content.trim().startsWith('{')) {
+    parsed = attemptRepairAndParse(result.content);
+  }
+  if (!parsed) throw new Error('AI response could not be parsed as JSON.');
+
+  // Apply updates
+  let applied = false;
+  let summary = parsed.chat_summary || 'Refinement applied.';
+  if (parsed.action === 'update_pages' && Array.isArray(parsed.updates) && parsed.updates.length) {
+    const updates = parsed.updates.map(u => ({
+      page_number: parseInt(u.page_number, 10),
+      new_html: u.new_html
+    }));
+    // Validate all target pages are present
+    const targetNums = pagesToRefine.map(p => allPages.indexOf(p) + 1);
+    const updateNums = updates.map(u => u.page_number);
+    const allCovered = targetNums.every(n => updateNums.includes(n));
+    if (!allCovered) {
+      throw new Error('AI did not return updates for all target pages.');
+    }
+    if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+    if (typeof updateSpecificPagesByNumber === 'function') {
+      applied = updateSpecificPagesByNumber(updates);
+    } else {
+      // fallback: apply one by one
+      applied = updates.every(u => {
+        if (typeof updateSpecificPageByNumber === 'function') {
+          return updateSpecificPageByNumber(u.page_number, u.new_html);
+        }
+        return false;
+      });
+    }
+  } else if (parsed.action === 'update_page' && parsed.page_number && typeof parsed.new_html === 'string') {
+    const pageNum = parseInt(parsed.page_number, 10);
+    if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+    if (typeof updateSpecificPageByNumber === 'function') {
+      applied = updateSpecificPageByNumber(pageNum, parsed.new_html);
+    } else {
+      applied = false;
+    }
+  } else {
+    throw new Error('AI did not return a valid update action.');
+  }
+
+  if (!applied) {
+    throw new Error('Could not apply refinement updates to the document.');
+  }
+
+  // Re-render math and diagrams
+  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(container);
+  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(container);
+  if (typeof invalidatePDFPreviewCache === 'function') invalidatePDFPreviewCache();
+  if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+
+  return { applied, summary };
+}
+
+// ============================================================
+// MAIN CHAT FUNCTION (UPDATED with refine pipelines)
+// ============================================================
+
 async function sendChatPromptToAI() {
   try {
     const inputField = document.getElementById('chat-input-textarea');
@@ -2097,19 +2219,7 @@ async function sendChatPromptToAI() {
       const requestedPageNumber = intentPayload.pageTarget || (typeof detectRequestedPageNumber === 'function' ? detectRequestedPageNumber(promptText) : null);
       const pageContext = intentPayload.intent === 'edit' && Array.isArray(intentPayload.editPages) && intentPayload.editPages.length > 1 ? (typeof getMultiPageEditContext === 'function' ? getMultiPageEditContext(intentPayload.editPages) : null) : (requestedPageNumber ? (typeof getPageRangeContext === 'function' ? getPageRangeContext(requestedPageNumber) : null) : null);
 
-      // @Beautify
-      if (intentPayload.intent === 'beautify') {
-        if (loadingElement && loadingElement.isConnected) loadingElement.remove();
-        APP_STATE.isAIGenerating = false;
-        if (typeof beautifyDocument === 'function') await beautifyDocument({ allowDuringAIGeneration: true });
-        APP_STATE.suppressDocumentAIChat = false;
-        APP_STATE.isAIGenerating = false;
-        document.getElementById('send-message-btn').disabled = false;
-        inputField.focus();
-        return;
-      }
-
-      // @Edit fast pipeline
+      // ========== EDIT PIPELINE ==========
       if (intentPayload.intent === 'edit') {
         if (loadingElement && loadingElement.isConnected) loadingElement.remove();
         const editPages = Array.isArray(intentPayload.editPages) && intentPayload.editPages.length ? intentPayload.editPages.slice().sort((a, b) => a - b) : [];
@@ -2190,7 +2300,68 @@ async function sendChatPromptToAI() {
         return;
       }
 
-      // Diagram edits
+      // ========== REFINE / REFINE EQUATION PIPELINE ==========
+      if (intentPayload.intent === 'refine' || intentPayload.intent === 'refine_equation') {
+        if (loadingElement && loadingElement.isConnected) loadingElement.remove();
+        if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
+          ProgressUI.show(intentPayload.intent === 'refine_equation' ? 'Refining equations...' : 'Refining document...', 'Applying AI refinement to the target pages...');
+          ProgressUI.setStage('AI refinement…', 8, 78, { indeterminate: true });
+        }
+        try {
+          // Ensure we have page targets
+          let targetPages = intentPayload.editPages || (intentPayload.pageTarget ? [intentPayload.pageTarget] : null);
+          if (!targetPages || targetPages.length === 0) {
+            // If no page specified, open modal to select page(s)
+            const pages = typeof openEditPageModal === 'function' ? await openEditPageModal() : null;
+            if (!pages || pages.length === 0) {
+              if (typeof displayToastNotification === 'function') displayToastNotification('Refine cancelled — no page selected.');
+              APP_STATE.isAIGenerating = false;
+              document.getElementById('send-message-btn').disabled = false;
+              inputField.focus();
+              return;
+            }
+            targetPages = pages;
+            // update the command param
+            const cmd = APP_STATE.selectedCommands.find(c => c.id === intentPayload.intent);
+            if (cmd) cmd.param = pages.join(' ');
+            if (typeof renderSelectedCommandChips === 'function') renderSelectedCommandChips();
+            intentPayload.editPages = pages;
+          }
+          const result = await handleRefineAction(promptText, intentPayload, pageContext, modelsUsed);
+          if (result && result.applied) {
+            if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', result.summary || '✅ Refinement applied.');
+            if (typeof displayToastNotification === 'function') displayToastNotification('✅ Refinement completed.');
+          } else {
+            throw new Error('Refinement could not be applied.');
+          }
+        } catch (refineErr) {
+          if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
+          if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `Refine failed: ${refineErr.message || refineErr}`);
+          if (typeof displayToastNotification === 'function') displayToastNotification(`Refine error: ${refineErr.message || refineErr}`);
+        } finally {
+          if (typeof ProgressUI !== 'undefined') { ProgressUI.finish();
+            setTimeout(() => { if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide(); }, 300); }
+          APP_STATE.suppressDocumentAIChat = false;
+          APP_STATE.isAIGenerating = false;
+          document.getElementById('send-message-btn').disabled = false;
+          inputField.focus();
+        }
+        return;
+      }
+
+      // ========== BEAUTIFY PIPELINE ==========
+      if (intentPayload.intent === 'beautify') {
+        if (loadingElement && loadingElement.isConnected) loadingElement.remove();
+        APP_STATE.isAIGenerating = false;
+        if (typeof beautifyDocument === 'function') await beautifyDocument({ allowDuringAIGeneration: true });
+        APP_STATE.suppressDocumentAIChat = false;
+        APP_STATE.isAIGenerating = false;
+        document.getElementById('send-message-btn').disabled = false;
+        inputField.focus();
+        return;
+      }
+
+      // ========== DIAGRAM EDIT ==========
       if (typeof isDiagramEditRequest === 'function' && isDiagramEditRequest(promptText, intentPayload)) {
         const diagramResult = typeof handleDiagramEditOrRefine === 'function' ? await handleDiagramEditOrRefine(promptText, intentPayload, pageContext, modelsUsed) : null;
         if (loadingElement && loadingElement.isConnected) loadingElement.remove();
@@ -2206,6 +2377,7 @@ async function sendChatPromptToAI() {
         return;
       }
 
+      // ========== OTHER INTENTS (Create PDF, Exam, etc.) ==========
       const legacyIsDocumentRequestGuess = /(write|create|generate|make|add|insert|append|update|rewrite|replace|edit|modify|fix|correct|revise|expand|extend|continue|improve|enhance|change|redo|shorten|summarize|reduce|delete|remove|তৈরি|লেখ|যোগ|সৃষ্টি|আপডেট|পুনর্লিখন|প্রতিস্থাপন|বানান|নোট|প্রশ্ন|MCQ|quiz|পরীক্ষা|চার্ট|সারণী|তালিকা|ফ্লো চার্ট|ডায়াগ্রাম|ঠিক কর|সংশোধন|সংশোধিত|সংশোধ|সম্পাদনা|পরিবর্তন|পরিবর্তিত|বাড়া|বাড়িয়ে|বাড়াও|কমাও|কমিয়ে|চালিয়ে যাও|মুছ|বাদ দাও|এডিট|মডিফাই)/i.test(promptText) && !/^(hi|hello|hey|thanks|thank you|ok|okay|সুপ্রভাত|ধন্যবাদ|ঠিক আছে|আচ্ছা)\s*[.!?]*$/i.test(promptText.trim());
 
       const isDocumentRequest = intentPayload.intent !== 'chat' ? (intentPayload.intent ? true : legacyIsDocumentRequestGuess) : false;
@@ -2214,7 +2386,7 @@ async function sendChatPromptToAI() {
       const sectionModeEnabled = getSectionModeEnabled();
       const intentForcesExplicitLengthDirect = intentPayload.intent === 'create_pdf' && (intentPayload.length === 'long_pdf' || intentPayload.length === 'short_pdf');
       const intentForcesStepByStep = !intentForcesExplicitLengthDirect && sectionModeEnabled && intentPayload.intent !== 'exam' && intentPayload.length === 'long_pdf';
-      const intentForcesSingleShot = intentPayload.intent === 'chat' || intentPayload.intent === 'refine_equation' || intentPayload.intent === 'beautify' || intentPayload.intent === 'edit' || intentPayload.intent === 'refine_pagination' || intentPayload.pageTarget || intentForcesExplicitLengthDirect;
+      const intentForcesSingleShot = intentPayload.intent === 'chat' || intentPayload.intent === 'refine_pagination' || intentPayload.pageTarget || intentForcesExplicitLengthDirect;
       const intentForcesDefaultDirect = intentPayload.intent === 'create_pdf' && !intentForcesExplicitLengthDirect && (intentPayload.length === null || intentPayload.length === 'standard' || !intentPayload.length);
 
       let precomputedGenerationPlan = null;
@@ -2289,7 +2461,7 @@ async function sendChatPromptToAI() {
         }
       }
 
-      // Single-shot fallback
+      // ========== SINGLE-SHOT FALLBACK (for chat, and other intents) ==========
       const existingHeadings = typeof getExistingHeadings === 'function' ? getExistingHeadings() : [];
       const headingWarningSingle = existingHeadings.length > 0 ? `The document already contains these sections: ${existingHeadings.join(', ')}. Do NOT repeat or duplicate any of them — only add genuinely new sections that are not already covered.` : '';
       const outputLanguageSingle = intentPayload.language ? null : (typeof detectOutputLanguage === 'function' ? detectOutputLanguage(promptText) : 'en');
@@ -2528,32 +2700,26 @@ async function sendChatPromptToAI() {
 
 // ===== APP INITIALIZATION =====
 window.onload = function() {
-  // Initialize Tab Manager
   if (typeof TAB_MANAGER !== 'undefined') {
     TAB_MANAGER.init();
   }
 
-  // Apply PDF formats
   if (typeof applyPDFVisualFormat === 'function') {
     applyPDFVisualFormat(typeof getActivePDFVisualFormat === 'function' ? getActivePDFVisualFormat() : 'default');
   }
 
-  // Load AI Models
   if (typeof loadAIModelsState === 'function') loadAIModelsState();
   if (typeof renderAIModelSelectBar === 'function') renderAIModelSelectBar();
   window.addEventListener('resize', typeof sizeAIModelSelect === 'function' ? sizeAIModelSelect : function() {}, { passive: true });
 
-  // Apply theme and mode
   if (typeof applyCurrentTheme === 'function') applyCurrentTheme();
   if (typeof updateModeButtonText === 'function') updateModeButtonText();
   if (typeof applyMonochromeDocumentStyles === 'function') applyMonochromeDocumentStyles();
 
-  // Set up page event listeners
   document.querySelectorAll('.doc-page-canvas').forEach(page => {
     if (typeof handlePageBlur === 'function') page.addEventListener('blur', handlePageBlur);
   });
 
-  // Textarea auto-resize
   const textarea = document.getElementById('chat-input-textarea');
   if (textarea) {
     textarea.addEventListener('input', function() { if (typeof autoResizeTextarea === 'function') autoResizeTextarea(this); });
@@ -2561,33 +2727,27 @@ window.onload = function() {
 
   APP_STATE._sendDebounce = false;
 
-  // Font loading
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(function() {
       if (typeof scheduleReflow === 'function') scheduleReflow();
     }).catch(function() {});
   }
 
-  // Desktop/ mobile view
   if (!(typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout())) {
     if (typeof switchPreviewTabDesktop === 'function') switchPreviewTabDesktop('editor');
   }
 
-  // Attachment bar
   if (typeof renderAttachmentBar === 'function') renderAttachmentBar();
 
-  // Document integrity pass
   try {
     const container = document.getElementById('document-view-container');
     if (container && typeof runDocumentOutputIntegrityPass === 'function') runDocumentOutputIntegrityPass(container);
   } catch (e) { console.warn('Initial document integrity pass skipped:', e); }
 
-  // Render tab bar
   if (typeof TAB_MANAGER !== 'undefined' && TAB_MANAGER.renderTabBar) {
     TAB_MANAGER.renderTabBar();
   }
 
-  // Topbar more menu binding
   if (typeof bindTopbarMoreMenu === 'function') bindTopbarMoreMenu();
 
   console.log('✅ AI PDF Studio initialized successfully!');
@@ -2629,7 +2789,6 @@ window.convertTextToDocumentHTML = convertTextToDocumentHTML;
 window.getActiveTabIdSafe = getActiveTabIdSafe;
 window.getActiveTabStateSafe = getActiveTabStateSafe;
 window.commitRuntimeStateSafe = commitRuntimeStateSafe;
-// window.getSectionModeEnabled = getSectionModeEnabled; // already exposed
 window.buildAttachmentContextForAI = buildAttachmentContextForAI;
 window.detectOutputLanguage = detectOutputLanguage;
 window.getDirectAIAttachmentFiles = getDirectAIAttachmentFiles;
@@ -2656,3 +2815,4 @@ window.generateLongPDFDirectMode = generateLongPDFDirectMode;
 window.computeDocumentAnalytics = computeDocumentAnalytics;
 window.formatAnalyticsChatMessage = formatAnalyticsChatMessage;
 window.validateAIActionHandlers = validateAIActionHandlers;
+window.handleRefineAction = handleRefineAction;
