@@ -176,10 +176,6 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
   const topLevelNodes = flattenContentTopLevelNodes(tempSource);
 
   // --- Pagination logic with proper spacing ---
-  // We use a temporary offscreen page to measure content height accurately.
-  // The page has fixed A4 dimensions with proper padding.
-  // We also account for margin/padding of child elements to avoid unnecessary page breaks.
-
   const measurePage = document.createElement('div');
   measurePage.className = 'doc-page-canvas pdf-export-measure-page';
   measurePage.style.position = 'absolute';
@@ -194,26 +190,19 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
   measurePage.style.pointerEvents = 'none';
   document.body.appendChild(measurePage);
 
-  // Helper to check if content fits in a page
   function contentFits(pageElement, extraNode) {
-    // Clone the page content and add the extra node, then measure
     const clone = pageElement.cloneNode(true);
-    // Remove footer if any
     const footer = clone.querySelector('.page-footer-number');
     if (footer) footer.remove();
-    // Append the extra node
     if (extraNode) {
       clone.appendChild(extraNode.cloneNode(true));
     }
-    // Reset measurement page and copy content
     measurePage.innerHTML = '';
-    // Copy all children except footer
     Array.from(clone.childNodes).forEach(child => {
       if (!child.classList || !child.classList.contains('page-footer-number')) {
         measurePage.appendChild(child.cloneNode(true));
       }
     });
-    // Force layout
     measurePage.style.display = 'block';
     void measurePage.offsetHeight;
     const fits = measurePage.scrollHeight <= EDITOR_A4_HEIGHT + 1;
@@ -222,7 +211,6 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
     return fits;
   }
 
-  // Main pagination loop
   let currentPageElement = currentPage;
   for (let i = 0; i < topLevelNodes.length; i++) {
     const node = topLevelNodes[i];
@@ -235,16 +223,12 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
       continue;
     }
 
-    // Check if the node fits in the current page
     if (contentFits(currentPageElement, node)) {
-      // It fits, add it
       const clone = node.cloneNode(true);
       currentPageElement.appendChild(clone);
       if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
       if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
     } else {
-      // It doesn't fit. If the current page is empty or only has a footer, we still need to place it.
-      // But if there is any content, we start a new page.
       const hasContent = Array.from(currentPageElement.childNodes).some(n => {
         if (n.nodeType === Node.TEXT_NODE) return n.textContent.trim().length > 0;
         if (n.nodeType === Node.ELEMENT_NODE) {
@@ -255,13 +239,9 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
       });
 
       if (hasContent) {
-        // Try to split the node if it's a block element (like a paragraph, heading, list, table, etc.)
-        // For simple text nodes or inline elements, we may need to split differently.
         if (node.nodeType === Node.ELEMENT_NODE && node.children.length === 0 && node.textContent.trim().length > 0) {
-          // This is a text-only element (like a paragraph). We can split by words.
           const words = node.textContent.trim().split(/\s+/);
           if (words.length > 1) {
-            // Find how many words fit on the current page
             let fitWords = 0;
             let testText = '';
             for (let w = 0; w < words.length; w++) {
@@ -275,18 +255,15 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
               }
             }
             if (fitWords > 0 && fitWords < words.length) {
-              // Put the fitting words on current page
               const fitPart = node.cloneNode(false);
               fitPart.textContent = testText;
               currentPageElement.appendChild(fitPart);
               if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(fitPart);
               if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(fitPart);
 
-              // Remaining words go to a new page
               const remainingText = words.slice(fitWords).join(' ');
               const remainingPart = node.cloneNode(false);
               remainingPart.textContent = remainingText;
-              // Start a new page
               currentPageElement = createNewPageElement();
               createdPages.push(currentPageElement);
               currentPageElement.appendChild(remainingPart);
@@ -297,7 +274,6 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
           }
         }
 
-        // If we cannot split, start a new page and put the whole node there.
         currentPageElement = createNewPageElement();
         createdPages.push(currentPageElement);
         const clone = node.cloneNode(true);
@@ -305,23 +281,16 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
       } else {
-        // Current page is empty, just place the node.
         const clone = node.cloneNode(true);
         currentPageElement.appendChild(clone);
         if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(clone);
         if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(clone);
       }
     }
-
-    // After adding, check if the page overflowed due to tall content (like a table or image)
-    // and if so, we may need to move some content to the next page.
-    // But we already checked with contentFits, so it should be okay.
   }
 
-  // Clean up measurement page
   document.body.removeChild(measurePage);
 
-  // Ensure all pages are properly sized and have footers
   normalizeAllEditorPagesToA4();
   docContainer.scrollTop = savedScrollPos;
   restoreCaretPosition(markerId);
@@ -411,7 +380,6 @@ function reflowDocument() {
         const fragment = document.createDocumentFragment();
         overflow.forEach(node => fragment.appendChild(node));
         newPage.prepend(fragment);
-        // Recheck the same page index because we inserted a new page
         continue;
       }
     }
@@ -425,17 +393,13 @@ function reflowDocument() {
 }
 
 function getOverflowNodes(page) {
-  // We need to find nodes that overflow the page height.
-  // Use a more accurate method: temporarily remove footer, measure.
   const maxHeight = 1123;
   const children = Array.from(page.childNodes);
   const footer = page.querySelector('.page-footer-number');
   const childrenWithoutFooter = children.filter(c => c !== footer);
 
-  // If there's only footer or no content, return empty.
   if (childrenWithoutFooter.length === 0) return [];
 
-  // Clone the page to measure without mutating the DOM
   const clonePage = page.cloneNode(true);
   clonePage.style.position = 'absolute';
   clonePage.style.left = '-9999px';
@@ -552,7 +516,7 @@ function updatePageFooters() {
   if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
 }
 
-// ===== FIT EDITOR PAGES TO SCREEN (IMPROVED FOR MOBILE) =====
+// ===== FIT EDITOR PAGES TO SCREEN (UNCHANGED) =====
 let _fitEditorTimer = null;
 
 function scheduleFitEditor() {
@@ -594,10 +558,8 @@ function fitEditorPagesToScreen() {
   docContainer.style.overflowX = 'hidden';
   docContainer.style.width = '100%';
 
-  // Get the actual container width (clientWidth is more reliable)
   const containerWidth = Math.max(1, docContainer.clientWidth || window.innerWidth || 360);
   const available = Math.max(1, containerWidth - 4);
-  // Scale factor: keep it between 0.48 and 1.0
   const scale = Math.min(1, Math.max(0.48, available / EDITOR_A4_WIDTH));
 
   const scaledW = EDITOR_A4_WIDTH * scale;
@@ -605,7 +567,6 @@ function fitEditorPagesToScreen() {
   const offsetX = Math.max(0, Math.round((containerWidth - scaledW) / 2));
   const gap = Math.max(12, Math.round(16 * scale));
 
-  // marginRight compensation so the layout width matches the scaled visual width
   const marginRightComp = Math.round(EDITOR_A4_WIDTH * (scale - 1));
   const marginBottomComp = Math.round(EDITOR_A4_HEIGHT * (scale - 1) + gap);
 
@@ -642,7 +603,6 @@ if (!window.__editorFitResizeBound) {
     }
   }, { passive: true });
 
-  // Use ResizeObserver on the container to catch layout changes
   if (docContainer && typeof ResizeObserver === 'function') {
     let _lastObservedW = 0;
     const ro = new ResizeObserver((entries) => {
@@ -656,13 +616,11 @@ if (!window.__editorFitResizeBound) {
     if (docContainer.parentElement) ro.observe(docContainer.parentElement);
   }
 
-  // MutationObserver to catch new pages added
   if (docContainer && typeof MutationObserver === 'function') {
     const mo = new MutationObserver(() => scheduleFitEditor());
     mo.observe(docContainer, { childList: true, subtree: true });
   }
 
-  // Initial fit and a few extra passes
   setTimeout(scheduleFitEditor, 50);
   setTimeout(scheduleFitEditor, 300);
   setTimeout(scheduleFitEditor, 1000);
@@ -700,7 +658,7 @@ function updateSpecificPageByNumber(pageNumber, newHtml) {
 
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
-  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
+    if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (error) {
     console.error('updateSpecificPageByNumber failed:', error);
@@ -735,7 +693,7 @@ function updateSpecificPagesByNumber(updates) {
     });
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
-  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
+    if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (e) {
     console.error('updateSpecificPagesByNumber failed:', e);
@@ -806,7 +764,7 @@ function updateSpecificSectionByHeading(targetHeading, newHtml) {
     if (typeof paginateDocumentCanvas === 'function') paginateDocumentCanvas();
     updatePageFooters();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
-  if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
+    if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
   } catch (error) {
     console.error('updateSpecificSectionByHeading failed:', error);
@@ -1391,10 +1349,8 @@ function getBrokenPages() {
   const pages = Array.from(container.querySelectorAll('.doc-page-canvas'));
   const brokenIndices = [];
   pages.forEach((page, index) => {
-    // Check for broken equations
     const brokenEquations = typeof findBrokenEquations === 'function' ? findBrokenEquations(page) : [];
     const hasBrokenKatex = page.querySelectorAll('.katex-eq.katex-render-failed, .katex-eq[data-render-pending="true"]').length > 0;
-    // Also check for empty pages (optional)
     const text = page.innerText.trim();
     const isEmpty = !text && !page.querySelector('img,svg,table,canvas');
     if (brokenEquations.length > 0 || hasBrokenKatex || isEmpty) {
@@ -1411,10 +1367,8 @@ async function fixBrokenPagesWithAI(pageIndices, modelsUsedSet) {
   const pages = Array.from(container.querySelectorAll('.doc-page-canvas'));
   const totalPages = pages.length;
 
-  // Prepare page HTML for each broken page
   const pageData = pageIndices.map(idx => {
     const page = pages[idx];
-    // Remove footer before sending
     const clone = page.cloneNode(true);
     clone.querySelectorAll('.page-footer-number').forEach(f => f.remove());
     return { index: idx, html: clone.innerHTML, originalPage: page };
@@ -1429,7 +1383,6 @@ Output MUST be a JSON array where each element has "page_index" (0-based index) 
 Example: [{"page_index":0,"fixed_html":"<p>Corrected content...</p>"}]
 Return ONLY the JSON array, no other text.`;
 
-  // Build user message with each page's HTML
   let userContent = `Fix the following pages:\n\n`;
   pageData.forEach(({ index, html }) => {
     userContent += `--- PAGE ${index + 1} (index ${index}) ---\n${html}\n\n`;
@@ -1447,7 +1400,6 @@ Return ONLY the JSON array, no other text.`;
       return false;
     }
 
-    // Apply fixes
     let applied = 0;
     for (const item of parsed) {
       const idx = parseInt(item.page_index, 10);
@@ -1455,7 +1407,6 @@ Return ONLY the JSON array, no other text.`;
       const fixedHtml = item.fixed_html;
       if (typeof fixedHtml !== 'string' || !fixedHtml.trim()) continue;
 
-      // Use updateSpecificPageByNumber to replace content
       const pageNum = idx + 1;
       const success = updateSpecificPageByNumber(pageNum, fixedHtml);
       if (success) applied++;
@@ -1516,11 +1467,9 @@ async function beautifyDocument(options = {}) {
     if (chatMsg && typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', chatMsg);
   };
 
-  // --- Detect broken pages ---
   const brokenIndices = getBrokenPages();
   const totalPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
 
-  // If there are broken pages and we have AI, fix them first (targeted)
   if (hasAIModel && brokenIndices.length > 0) {
     if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
       ProgressUI.show('Fixing broken pages...', `Detected ${brokenIndices.length} page(s) with rendering issues.`);
@@ -1528,7 +1477,6 @@ async function beautifyDocument(options = {}) {
     }
     const fixed = await fixBrokenPagesWithAI(brokenIndices, modelsUsed);
     if (fixed) {
-      // After fixing broken pages, optionally apply local beautify (no AI) to polish structure
       const afterFixHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
       if (afterFixHTML) {
         const localPolished = localBeautifyHTML(afterFixHTML);
@@ -1549,7 +1497,6 @@ async function beautifyDocument(options = {}) {
       if (sendBtn) sendBtn.disabled = false;
       return;
     } else {
-      // If fixing failed, fallback to local beautify only
       if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide();
       const localPolished = localBeautifyHTML(currentFullHTML);
       if (localPolished && localPolished !== currentFullHTML) {
@@ -1572,8 +1519,6 @@ async function beautifyDocument(options = {}) {
     }
   }
 
-  // ---- If no broken pages, do original full beautify (or local only) ----
-  // If no AI model, do local beautify
   if (!hasAIModel) {
     try {
       if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
@@ -1608,7 +1553,6 @@ async function beautifyDocument(options = {}) {
     return;
   }
 
-  // ---- Full AI beautify (original behavior) ----
   const sourceForAI = typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : currentFullHTML;
   const outputLanguage = detectOutputLanguage(sourceForAI || currentFullHTML);
   const source = getBeautifySourceHTML() || sourceForAI || currentFullHTML;
@@ -1732,7 +1676,7 @@ async function handleDiagramEditOrRefine(promptText, intentPayload, pageContext,
     `Use the application's diagram classes where appropriate: .fc-wrapper, .fc-title, .fc-svg-wrapper, .fc-svg, .fc-node-rect, .fc-node-text, .fc-line.`;
 
   try {
-    const result = await typeof callAIAPI === 'function' ? callAIAPI([
+    const result = typeof callAIAPI === 'function' ? callAIAPI([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `USER REQUEST:\n${promptText}\n\nAVAILABLE DIAGRAMS:\n${candidateList}` }
     ], { forceJson: true, modelsUsedSet: modelsUsedSet }) : null;
@@ -1976,9 +1920,6 @@ function choosePDFTextFormat(formatId) {
 // ============================================================
 // WINDOW EXPOSURE – Document Editor
 // ============================================================
-// Note: switchPreviewTab is defined in pdf-export.js (loaded after this file) —
-// its own top-level `function` declaration attaches it to window automatically,
-// so it must not be re-exported here (that would throw before pdf-export.js loads).
 window.executeEditorCommand = executeEditorCommand;
 window.paginateDocumentCanvas = paginateDocumentCanvas;
 window.beautifyDocument = beautifyDocument;
