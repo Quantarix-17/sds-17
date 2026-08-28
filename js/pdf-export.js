@@ -886,7 +886,7 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT =====
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced + Scrollable) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   const isExam = document.body.classList.contains('exam-document');
 
@@ -1046,7 +1046,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== COMPUTE TRUE PDF PAGES (UPDATED: shrink all pages, filter empty) =====
+// ===== COMPUTE TRUE PDF PAGES (UPDATED: FIXED BLANK PAGES) =====
 async function computeTruePDFPages(htmlOverride) {
   const isExam = document.body.classList.contains('exam-document');
   const rawHtml = htmlOverride !== undefined ? htmlOverride : (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '');
@@ -1114,15 +1114,13 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  // --- Force shrink EVERY page to fit, not just overflow ones ---
+  // Force shrink every page to fit, not just overflow ones
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
-    // Always try to fit
     if (typeof shrinkPageToFit === 'function') {
       shrinkPageToFit(page);
     }
-    // Double-check and apply stronger shrink if still overflowing
     if (!pageFits(page)) {
       if (typeof shrinkPageToFit === 'function') {
         shrinkPageToFit(page, [1, 0.92, 0.85, 0.78, 0.72, 0.66]);
@@ -1130,7 +1128,7 @@ async function computeTruePDFPages(htmlOverride) {
     }
   }
 
-  // --- Filter out completely empty pages or pages with only footer ---
+  // --- IMPROVED FILTERING: remove pages that only have a footer or are completely empty ---
   const pages = pageEls.map(el => ({
     el,
     html: el.innerHTML,
@@ -1138,9 +1136,14 @@ async function computeTruePDFPages(htmlOverride) {
     brokenEquations: typeof findBrokenEquations === 'function' ? findBrokenEquations(el) : [],
     brokenDiagrams: typeof findBrokenDiagrams === 'function' ? findBrokenDiagrams(el) : []
   })).filter(p => {
-    const text = (p.el.innerText || '').trim();
-    const hasVisibleContent = text.length > 0 || p.el.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper');
-    return hasVisibleContent;
+    // Check if the page has any visible content besides the footer
+    const clone = p.el.cloneNode(true);
+    const footer = clone.querySelector('.page-footer-number');
+    if (footer) footer.remove();
+    const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
+    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution, .quiz-container, .omr-sheet-page');
+    const hasContent = text.length > 0 || hasVisual;
+    return hasContent;
   });
 
   return { offscreen, pages };
@@ -1218,7 +1221,7 @@ function applyLocalMarginSafetyFixes(result) {
   }
 }
 
-// ===== SWITCH PREVIEW TAB =====
+// ===== SWITCH PREVIEW TAB (FIXED: use !important to guarantee visibility) =====
 function switchPreviewTab(tabName) {
   const docView = document.getElementById('document-view-container');
   const pdfView = document.getElementById('pdf-view-container');
@@ -1530,7 +1533,7 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     return { page, didSplit };
 }
 
-// ===== appendNodeWithPagination (updated: fit check + shrink for non‑breakable nodes) =====
+// ===== appendNodeWithPagination (UPDATED: improved pageHasContent check) =====
 async function appendNodeWithPagination(node, currentPage, createPage) {
     if (node.nodeType === Node.TEXT_NODE) {
         if (!node.textContent.trim()) return currentPage;
@@ -1703,7 +1706,7 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
         return result.page;
     }
 
-    // --- For non‑breakable nodes (like IMG, TABLE, SVG), create new page and try to shrink ---
+    // For non-breakable nodes (IMG, TABLE, SVG), create new page if needed and then add
     if (pageHasContent(currentPage)) currentPage = createPage();
     const finalClone = appendClone(currentPage, node);
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
@@ -1721,12 +1724,16 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
     return currentPage;
 }
 
+// ===== IMPROVED pageHasContent =====
 function pageHasContent(page) {
-    return Array.from(page.childNodes).some(n => {
-        if (n.nodeType === Node.TEXT_NODE) return !!n.textContent.trim();
-        if (n.nodeType !== Node.ELEMENT_NODE) return false;
-        return !n.classList.contains('page-footer-number') || n.textContent.trim();
-    });
+    if (!page) return false;
+    // Check if there's any content besides the footer
+    const clone = page.cloneNode(true);
+    const footer = clone.querySelector('.page-footer-number');
+    if (footer) footer.remove();
+    const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
+    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution, .quiz-container, .omr-sheet-page, .exam-header-block');
+    return text.length > 0 || hasVisual;
 }
 
 function appendClone(page, sourceNode) {
