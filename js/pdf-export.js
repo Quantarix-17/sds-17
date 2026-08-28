@@ -1205,7 +1205,7 @@ function applyLocalMarginSafetyFixes(result) {
   }
 }
 
-// ===== SWITCH PREVIEW TAB (IMPROVED FOR MOBILE) =====
+// ===== SWITCH PREVIEW TAB (FIXED: use !important to guarantee visibility) =====
 function switchPreviewTab(tabName) {
   const docView = document.getElementById('document-view-container');
   const pdfView = document.getElementById('pdf-view-container');
@@ -1215,15 +1215,22 @@ function switchPreviewTab(tabName) {
   const btnEditorDesktop = document.getElementById('tab-editor-btn-desktop');
   const btnPdfDesktop = document.getElementById('tab-pdf-btn-desktop');
 
+  // Update button states
   if (btnEditor) btnEditor.classList.toggle('active', tabName === 'editor');
   if (btnPdf) btnPdf.classList.toggle('active', tabName === 'pdf');
   if (btnEditorDesktop) btnEditorDesktop.classList.toggle('active', tabName === 'editor');
   if (btnPdfDesktop) btnPdfDesktop.classList.toggle('active', tabName === 'pdf');
 
+  // Force visibility with !important to prevent CSS overrides
+  const setDisplay = (el, display) => {
+    if (el) el.style.setProperty('display', display, 'important');
+  };
+
   if (tabName === 'editor') {
-    if (docView) docView.style.display = 'flex';
-    if (toolbar) toolbar.style.display = 'flex';
-    if (pdfView) pdfView.style.display = 'none';
+    setDisplay(docView, 'flex');
+    setDisplay(toolbar, 'flex');
+    setDisplay(pdfView, 'none');
+    // Remove any leftover render host
     const strayHost = document.getElementById('image-pdf-render-host');
     if (strayHost && strayHost.parentNode) strayHost.parentNode.removeChild(strayHost);
     if (typeof requestAnimationFrame === 'function') {
@@ -1233,11 +1240,12 @@ function switchPreviewTab(tabName) {
         setTimeout(() => { if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen(); }, 400);
       });
     }
-  } else {
-    if (docView) docView.style.display = 'none';
-    if (toolbar) toolbar.style.display = 'none';
+  } else { // pdf
+    setDisplay(docView, 'none');
+    setDisplay(toolbar, 'none');
+    setDisplay(pdfView, 'flex');
+    // Ensure PDF container takes full space
     if (pdfView) {
-      pdfView.style.display = 'flex';
       pdfView.style.flexDirection = 'column';
       pdfView.style.height = '100%';
       pdfView.style.overflowY = 'auto';
