@@ -4,24 +4,11 @@
 // ========================================================================
 
 // ===== CUSTOM KATEX MACROS (CORRECTED) =====
-// BUG FIX: KaTeX's `macros` option requires each key to INCLUDE the leading
-// backslash (e.g. "\\extker", not "extker") — that's how KaTeX's macro
-// expander matches control sequences it encounters while parsing. The
-// previous version of this function used bare keys like "extker"/"R", which
-// KaTeX never matches against \extker / \R in the actual LaTeX source. The
-// result wasn't a thrown error (this file calls katex.render with
-// throwOnError:false and strict:'ignore'), so nothing looked "broken" by
-// this file's own isKatexSpanBroken() check — but visually every equation
-// using one of these macros rendered as literal red "\extker"-style text
-// instead of the intended notation, i.e. silently not working.
 function getCustomKaTeXMacros() {
     return {
-        // Linear algebra / extension notation (user-requested)
         "\\extker": "\\operatorname{ext\\,ker}",
         "\\extrange": "\\operatorname{ext\\,range}",
         "\\ext": "\\operatorname{ext}",
-
-        // Common math operators (optional but safe)
         "\\R": "\\mathbb{R}",
         "\\C": "\\mathbb{C}",
         "\\Q": "\\mathbb{Q}",
@@ -47,55 +34,40 @@ function getCustomKaTeXMacros() {
 }
 
 // ===== KNOWN LATEX COMMAND CHECK =====
-// Used to distinguish real LaTeX commands (\frac, \alpha, ...) from
-// escape-sequence artifacts (\n, \t, \r) and plain text during cleanup.
 const KNOWN_LATEX_COMMANDS = new Set([
-    // fractions / binomials
-    'frac', 'dfrac', 'tfrac', 'cfrac', 'binom', 'dbinom', 'tbinom',
-    // roots
+    'frac','dfrac','tfrac','cfrac','binom','dbinom','tbinom',
     'sqrt',
-    // big operators
-    'sum', 'prod', 'coprod', 'int', 'iint', 'iiint', 'oint',
-    'bigcup', 'bigcap', 'bigoplus', 'bigotimes', 'bigvee', 'bigwedge',
-    // limits / named functions
-    'lim', 'limsup', 'liminf', 'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
-    'sinh', 'cosh', 'tanh', 'coth', 'log', 'ln', 'exp', 'max', 'min',
-    'sup', 'inf', 'det', 'dim', 'ker', 'deg', 'gcd', 'arg', 'Pr',
-    // accents
-    'vec', 'bar', 'hat', 'dot', 'ddot', 'tilde', 'widehat', 'widetilde',
-    'overline', 'underline', 'overrightarrow', 'overleftarrow', 'overbrace', 'underbrace',
-    // relations
-    'leq', 'geq', 'neq', 'ne', 'approx', 'equiv', 'sim', 'simeq', 'cong',
-    'propto', 'parallel', 'perp', 'll', 'gg',
-    'subset', 'subseteq', 'supset', 'supseteq', 'in', 'notin', 'ni',
-    'cup', 'cap', 'setminus', 'emptyset', 'varnothing',
-    // arrows
-    'to', 'rightarrow', 'leftarrow', 'leftrightarrow', 'Rightarrow',
-    'Leftarrow', 'Leftrightarrow', 'mapsto', 'implies', 'iff', 'longrightarrow', 'longleftarrow',
-    // logic
-    'forall', 'exists', 'neg', 'lnot', 'wedge', 'vee', 'land', 'lor',
-    // misc symbols
-    'infty', 'partial', 'nabla', 'angle', 'triangle', 'circ', 'bullet',
-    'star', 'ast', 'pm', 'mp', 'times', 'cdot', 'div',
-    'oplus', 'ominus', 'otimes', 'oslash', 'odot',
-    'top', 'bot', 'aleph', 'hbar', 'ell', 'wp', 'Re', 'Im', 'prime', 'dagger', 'ddagger',
-    // greek (lowercase)
-    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta',
-    'eta', 'theta', 'vartheta', 'iota', 'kappa', 'lambda', 'mu', 'nu',
-    'xi', 'omicron', 'pi', 'varpi', 'rho', 'varrho', 'sigma', 'varsigma',
-    'tau', 'upsilon', 'phi', 'varphi', 'chi', 'psi', 'omega',
-    // greek (uppercase)
-    'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon',
-    'Phi', 'Psi', 'Omega',
-    // text / formatting / sizing
-    'text', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathtt', 'mathcal',
-    'mathbb', 'mathfrak', 'mathscr', 'boldsymbol', 'operatorname',
-    'left', 'right', 'big', 'Big', 'bigg', 'Bigg',
-    'quad', 'qquad', 'displaystyle', 'textstyle', 'scriptstyle', 'scriptscriptstyle',
-    'cdots', 'ldots', 'vdots', 'ddots', 'dots',
-    'pmod', 'bmod', 'not',
-    // custom macros defined in getCustomKaTeXMacros()
-    'ext', 'extker', 'extrange'
+    'sum','prod','coprod','int','iint','iiint','oint',
+    'bigcup','bigcap','bigoplus','bigotimes','bigvee','bigwedge',
+    'lim','limsup','liminf','sin','cos','tan','sec','csc','cot',
+    'sinh','cosh','tanh','coth','log','ln','exp','max','min',
+    'sup','inf','det','dim','ker','deg','gcd','arg','Pr',
+    'vec','bar','hat','dot','ddot','tilde','widehat','widetilde',
+    'overline','underline','overrightarrow','overleftarrow','overbrace','underbrace',
+    'leq','geq','neq','ne','approx','equiv','sim','simeq','cong',
+    'propto','parallel','perp','ll','gg',
+    'subset','subseteq','supset','supseteq','in','notin','ni',
+    'cup','cap','setminus','emptyset','varnothing',
+    'to','rightarrow','leftarrow','leftrightarrow','Rightarrow',
+    'Leftarrow','Leftrightarrow','mapsto','implies','iff','longrightarrow','longleftarrow',
+    'forall','exists','neg','lnot','wedge','vee','land','lor',
+    'infty','partial','nabla','angle','triangle','circ','bullet',
+    'star','ast','pm','mp','times','cdot','div',
+    'oplus','ominus','otimes','oslash','odot',
+    'top','bot','aleph','hbar','ell','wp','Re','Im','prime','dagger','ddagger',
+    'alpha','beta','gamma','delta','epsilon','varepsilon','zeta',
+    'eta','theta','vartheta','iota','kappa','lambda','mu','nu',
+    'xi','omicron','pi','varpi','rho','varrho','sigma','varsigma',
+    'tau','upsilon','phi','varphi','chi','psi','omega',
+    'Gamma','Delta','Theta','Lambda','Xi','Pi','Sigma','Upsilon',
+    'Phi','Psi','Omega',
+    'text','mathrm','mathbf','mathit','mathsf','mathtt','mathcal',
+    'mathbb','mathfrak','mathscr','boldsymbol','operatorname',
+    'left','right','big','Big','bigg','Bigg',
+    'quad','qquad','displaystyle','textstyle','scriptstyle','scriptscriptstyle',
+    'cdots','ldots','vdots','ddots','dots',
+    'pmod','bmod','not',
+    'ext','extker','extrange'
 ]);
 
 function isKnownLatexCommand(cmd) {
@@ -122,6 +94,107 @@ function waitForKatex(maxMs) {
     });
 }
 
+// ===== HELPER: EXTRACT LATEX COMMAND WITH BALANCED BRACES =====
+function extractLatexCommandWithArgs(text, startPos) {
+    // Expects text[startPos] === '\\'
+    let i = startPos + 1;
+    if (i >= text.length) return null;
+    let cmd = '';
+    while (i < text.length && /[A-Za-z]/.test(text[i])) {
+        cmd += text[i];
+        i++;
+    }
+    if (!cmd) return null;
+    // Now parse arguments: each argument is either { ... } or [ ... ] or a single character (like \frac)
+    let args = [];
+    let braceCount = 0;
+    let currentArg = '';
+    let inBrace = false;
+    let inSquare = false;
+    let squareCount = 0;
+    while (i < text.length) {
+        const ch = text[i];
+        if (ch === '{' && !inSquare) {
+            if (inBrace) {
+                braceCount++;
+                currentArg += ch;
+            } else {
+                inBrace = true;
+                braceCount = 1;
+                currentArg = '';
+            }
+            i++;
+            continue;
+        }
+        if (ch === '}' && !inSquare) {
+            if (inBrace) {
+                braceCount--;
+                if (braceCount === 0) {
+                    inBrace = false;
+                    args.push(currentArg);
+                    currentArg = '';
+                    i++;
+                    continue;
+                } else {
+                    currentArg += ch;
+                    i++;
+                    continue;
+                }
+            } else {
+                // unmatched closing brace – stop
+                break;
+            }
+        }
+        if (ch === '[' && !inBrace) {
+            if (inSquare) {
+                squareCount++;
+                currentArg += ch;
+            } else {
+                inSquare = true;
+                squareCount = 1;
+                currentArg = '';
+            }
+            i++;
+            continue;
+        }
+        if (ch === ']' && !inBrace) {
+            if (inSquare) {
+                squareCount--;
+                if (squareCount === 0) {
+                    inSquare = false;
+                    args.push('[' + currentArg + ']');
+                    currentArg = '';
+                    i++;
+                    continue;
+                } else {
+                    currentArg += ch;
+                    i++;
+                    continue;
+                }
+            } else {
+                break;
+            }
+        }
+        if (inBrace || inSquare) {
+            currentArg += ch;
+            i++;
+        } else {
+            // if not in any brace, a letter/digit means the command has no more arguments
+            if (/[A-Za-z0-9]/.test(ch)) break;
+            // if whitespace, skip
+            if (/\s/.test(ch)) { i++; continue; }
+            // if other char, stop
+            break;
+        }
+    }
+    // If we never entered a brace, the command has no arguments; return just the command
+    if (!args.length) {
+        return { cmd, args: [], endPos: startPos + 1 + cmd.length };
+    }
+    // The end position is where we stopped parsing
+    return { cmd, args, endPos: i };
+}
+
 // ===== PROCESS MATH EQUATIONS IN CONTAINER =====
 function processMathEquationsInContainer(container) {
     if (!container) return;
@@ -138,25 +211,6 @@ function processMathEquationsInContainer(container) {
     while ((node = walker.nextNode())) textNodes.push(node);
 
     const delimiterRegex = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[\s\S]*?\$|\\\([\s\S]*?\\\)|\\begin\{[A-Za-z*]+\}[\s\S]*?\\end\{[A-Za-z*]+\})/g;
-    // Include custom commands in bare math detection
-    // BUG FIX: this used to be `(?:\\...\b)[^\n]{0,260}` followed by a lookahead
-    // for the *next* delimiter/punctuation. Because the `[^\n]{0,260}` quantifier
-    // is greedy, the regex engine attempts the longest possible match first and
-    // only backtracks until the lookahead is satisfied — and since ordinary
-    // English prose contains spaces/punctuation every few characters, it would
-    // almost always backtrack only as far as the LAST qualifying delimiter within
-    // the 260-char window, not the first one after the command. In practice this
-    // meant a single recognized command anywhere in a sentence (e.g. "\text",
-    // "\sin", "\left") would swallow the rest of that sentence — and often the
-    // next one too — into a single KaTeX span, rendering entire paragraphs as
-    // broken/garbled math instead of the intended short expression.
-    // FIX: instead of "command + free text until some later delimiter", match
-    // the command plus only its actual brace-delimited argument(s), e.g.
-    // \text{ mL}, \frac{a}{b}, \sqrt{x+1}, \operatorname{ext ker}. This correctly
-    // captures commands with arguments containing spaces/punctuation (which a
-    // naive "stop at first delimiter" lazy-quantifier fix would truncate too
-    // early) while never spilling over into surrounding prose.
-    const bareMathRegex = /(?:^|[\s(:=;,-])(\\(?:frac|dfrac|tfrac|sqrt|sum|int|lim|vec|bar|hat|dot|cdot|times|leq|geq|neq|approx|infty|alpha|beta|gamma|delta|theta|lambda|mu|sigma|pi|sin|cos|tan|log|ln|left|right|text|mathrm|mathbf|mathbb|ext|extker|extrange|operatorname)\b(?:\s*\{[^{}]*\}){0,4})/g;
 
     textNodes.forEach(textNode => {
         const text = textNode.nodeValue;
@@ -177,6 +231,12 @@ function processMathEquationsInContainer(container) {
                     let mathPart = part;
                     if (part.startsWith('$$')) mathPart = part.replace(/^\$\$|\$\$$/g, '');
                     else if (part.startsWith('\\[')) mathPart = part.replace(/^\\\[|\\\]$/g, '');
+                    else if (part.startsWith('\\begin{')) {
+                        // keep as is, will be handled by createKatexSpanElement as display math
+                        // but we need to strip the delimiters? Actually we keep them as they are part of the LaTeX
+                        // We'll wrap the whole part as a display equation
+                        mathPart = part;
+                    }
                     fragment.appendChild(createKatexSpanElement(mathPart, true));
                 } else if (part.startsWith('$') || part.startsWith('\\(')) {
                     fragment.appendChild(createKatexSpanElement(part.replace(/^\$|^\\\(|\$|\\\)$/g, ''), false));
@@ -185,60 +245,80 @@ function processMathEquationsInContainer(container) {
                 }
             });
         } else {
+            // No delimited math, but we might have bare LaTeX commands
             let last = 0;
             let matched = false;
-            text.replace(bareMathRegex, (full, expr, offset) => {
-                const exprStart = full.indexOf(expr);
-                const absoluteStart = offset + Math.max(0, exprStart);
-                // NOTE: text.slice(last, absoluteStart) already includes the leading
-                // delimiter char(s) captured by the regex (space, "(", ":", "-", etc.),
-                // so re-appending full.slice(0, exprStart) here duplicated that
-                // character (e.g. produced "  x=5" or "((x=5" around bare math).
-                if (absoluteStart > last) fragment.appendChild(document.createTextNode(text.slice(last, absoluteStart)));
-                fragment.appendChild(createKatexSpanElement(expr.trim(), false));
-                last = absoluteStart + expr.length;
-                matched = true;
-                return full;
-            });
+            // Use a regex to find \command patterns, but we need to capture the whole command with arguments
+            // We'll use a custom function to scan
+            const cmdRegex = /\\[A-Za-z]+/g;
+            let match;
+            while ((match = cmdRegex.exec(text)) !== null) {
+                const startPos = match.index;
+                const cmdText = match[0];
+                // Extract full command with arguments
+                const extracted = extractLatexCommandWithArgs(text, startPos);
+                if (!extracted) continue;
+                const { cmd, args, endPos } = extracted;
+                // Check if this is a known LaTeX command (we want to wrap it)
+                if (isKnownLatexCommand(cmd)) {
+                    // Build the full LaTeX string: \cmd + args
+                    let latex = '\\' + cmd;
+                    if (args.length) {
+                        for (const arg of args) {
+                            latex += '{' + arg + '}';
+                        }
+                    }
+                    // Add any trailing whitespace? We'll keep it.
+                    // Insert preceding text
+                    if (startPos > last) {
+                        fragment.appendChild(document.createTextNode(text.slice(last, startPos)));
+                    }
+                    // Create the span
+                    fragment.appendChild(createKatexSpanElement(latex, false));
+                    last = endPos;
+                    matched = true;
+                }
+            }
             if (!matched) {
-                appendAutoWrappedLatex(fragment, text);
+                // No recognized command, but maybe there is plain math like x=5
+                // We'll use a simpler heuristic: if there is an equation-like pattern, wrap it.
+                // For safety, we'll not wrap plain math without command to avoid over-wrapping.
+                // Instead, we'll leave as is.
+                fragment.appendChild(document.createTextNode(text));
                 last = text.length;
             } else if (last < text.length) {
                 fragment.appendChild(document.createTextNode(text.slice(last)));
             }
         }
-        if (textNode.parentNode) textNode.parentNode.replaceChild(fragment, textNode);
+        if (textNode.parentNode) {
+            // Preserve whitespace: if the fragment has only text nodes, we can just replace.
+            // But we need to handle leading/trailing spaces.
+            textNode.parentNode.replaceChild(fragment, textNode);
+        }
     });
 }
 
 // ===== MATH ARTIFACT REPAIR =====
 function repairVisibleEscapeSequencesInText(text) {
     let value = String(text || '');
-    // Collapse a literal escaped CRLF ("\r\n" as two chars, not a real newline)
-    // into an actual newline.
-    value = value.replace(/\\r\\n/g, '\n');
-    // Collapse double-escaped \\n \\r \\t (from JSON/AI double-escaping) down to
-    // a single backslash form, but only defer the decision to the whitelist
-    // check below — never strip here.
-    value = value.replace(/\\\\([nrt])(?=[A-Za-z])/g, '\\$1');
-    // PERMANENT FIX: previously there was an extra unconditional pass here
-    // (`.replace(/\\r/g, '\n').replace(/\\t/g, '\t')`) that stripped every
-    // literal "\r" / "\t" BEFORE the known-LaTeX-command check below ever ran.
-    // That silently destroyed the backslash on every real command starting
-    // with r/t — \text, \times, \right, \rightarrow, \tan, \theta, \tau,
-    // \tilde, \to, \triangle, \tfrac, \tbinom, etc. — turning "\text{ mL}"
-    // into a tab character followed by "ext{ mL}", which is exactly the
-    // "ext{...}" / "imes" / "ightarrow" / "ight)" corruption seen in KaTeX
-    // fallback boxes. All n/t/r escape-artifact handling now goes through the
-    // single whitelist-aware pass below, so no known LaTeX command is ever
-    // mistaken for a stray escape sequence.
-    value = value.replace(/\\([A-Za-z]+)/g, (full, cmd) => {
-        if (isKnownLatexCommand(cmd)) return full;
-        if (cmd.startsWith('n')) return '\n' + cmd.slice(1);
-        if (cmd.startsWith('t')) return '\t' + cmd.slice(1);
-        if (cmd.startsWith('r')) return '\n' + cmd.slice(1);
+    // First, handle actual escape sequences that are not part of LaTeX commands.
+    // We'll replace \n, \r, \t with their real characters, but only when they appear as standalone
+    // backslash + letter, not as part of a larger command.
+    // We'll scan for \ followed by n, r, t and ensure that the preceding character is not a backslash
+    // and the following is not a letter (to avoid matching \frac).
+    value = value.replace(/\\([nrt])/g, (full, letter) => {
+        // We want to keep the backslash if it's part of a LaTeX command.
+        // Since we cannot know the context easily, we'll rely on the known command list:
+        // if the letter is part of a known command, we leave it as is.
+        // But here we are matching single letters, so if it's n, r, t, they are not commands.
+        // So we can safely replace.
+        if (letter === 'n') return '\n';
+        if (letter === 'r') return '\r';
+        if (letter === 't') return '\t';
         return full;
     });
+    // Also handle double escaped from JSON: \\n -> \n, but we already handled above.
+    // For safety, we also replace \\\\ with single backslash? No, we keep double backslash as literal.
     return value;
 }
 
@@ -286,6 +366,7 @@ function normalizeEquationLatexSource(latex) {
     // Collapse accidental double-escaping from JSON / AI output, but keep real commands
     value = value.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
     value = value.replace(/\\\\/g, '\\');
+    // Remove surrounding delimiters if present
     value = value.replace(/^\$\$([\s\S]*?)\$\$$/, '$1').trim();
     value = value.replace(/^\\\[([\s\S]*?)\\\]$/, '$1').trim();
     value = value.replace(/^\$([\s\S]*?)\$$/, '$1').trim();
@@ -311,25 +392,36 @@ const RAW_LATEX_COMMAND_REGEX = /\\([A-Za-z]+)/;
 const MATH_CHARSET_RUN_REGEX = /[A-Za-z0-9+\-*/=<>≤≥.,;:(){}\[\]^_|'"~&×÷·°√∞≠≈∑∫πθλµσΩαβγδ\\ \t]+/g;
 
 function appendAutoWrappedLatex(fragment, textPart) {
-    let lastIndex = 0;
-    textPart.replace(MATH_CHARSET_RUN_REGEX, (run, offset) => {
-        const matches = Array.from(run.matchAll(/\\([A-Za-z]+)/g));
-        const hasKnownCommand = matches.some(m => isKnownLatexCommand(m[1]));
-        if (hasKnownCommand) {
-            const trimmed = run.trim();
-            if (trimmed) {
-                const leadingWs = run.match(/^\s*/)[0];
-                const trailingWs = run.match(/\s*$/)[0];
-                if (offset > lastIndex) fragment.appendChild(document.createTextNode(textPart.slice(lastIndex, offset)));
-                if (leadingWs) fragment.appendChild(document.createTextNode(leadingWs));
-                fragment.appendChild(createKatexSpanElement(trimmed, false));
-                if (trailingWs) fragment.appendChild(document.createTextNode(trailingWs));
-                lastIndex = offset + run.length;
+    // We'll scan for LaTeX commands and wrap only those with their arguments.
+    // Use the same extractor.
+    let last = 0;
+    const cmdRegex = /\\[A-Za-z]+/g;
+    let match;
+    while ((match = cmdRegex.exec(textPart)) !== null) {
+        const startPos = match.index;
+        const extracted = extractLatexCommandWithArgs(textPart, startPos);
+        if (!extracted) continue;
+        const { cmd, args, endPos } = extracted;
+        if (isKnownLatexCommand(cmd)) {
+            // Add preceding text
+            if (startPos > last) {
+                fragment.appendChild(document.createTextNode(textPart.slice(last, startPos)));
             }
+            // Build the LaTeX string
+            let latex = '\\' + cmd;
+            if (args.length) {
+                for (const arg of args) {
+                    latex += '{' + arg + '}';
+                }
+            }
+            // Create the math span
+            fragment.appendChild(createKatexSpanElement(latex, false));
+            last = endPos;
         }
-        return run;
-    });
-    if (lastIndex < textPart.length) fragment.appendChild(document.createTextNode(textPart.slice(lastIndex)));
+    }
+    if (last < textPart.length) {
+        fragment.appendChild(document.createTextNode(textPart.slice(last)));
+    }
 }
 
 // ===== SPAN STATE HELPERS =====
@@ -345,17 +437,18 @@ function isKatexSpanBroken(spanElement) {
 function showLatexFallback(spanElement, latexString) {
     if (!spanElement) return;
     const isDisplay = spanElement.getAttribute('data-display') === 'true';
-    spanElement.innerHTML = '';
+    spanElement.innerHTML = ''; // clear
     const fallback = document.createElement(isDisplay ? 'div' : 'span');
     fallback.className = 'katex-fallback';
     fallback.style.cssText = isDisplay
         ? 'font-family:Cambria Math,STIX Two Math,serif;font-style:italic;text-align:center;padding:4px 0;color:inherit;opacity:0.92;'
         : 'font-family:Cambria Math,STIX Two Math,serif;font-style:italic;color:inherit;opacity:0.92;';
+    // Escape HTML to avoid injection
     fallback.textContent = latexString || spanElement.getAttribute('data-latex') || '';
     spanElement.appendChild(fallback);
 }
 
-// ===== KATEX RENDERING WITH MACROS (CORRECTED) =====
+// ===== KATEX RENDERING WITH MACROS =====
 function renderKatexSpanWithRecovery(spanElement, force = false) {
     if (!spanElement) return false;
     if (!isKatexReady()) {
@@ -369,7 +462,6 @@ function renderKatexSpanWithRecovery(spanElement, force = false) {
         return false;
     }
 
-    // Skip if already healthy and not forced
     if (!force && !isKatexSpanBroken(spanElement)) return true;
 
     const isDisplayMode = spanElement.getAttribute('data-display') === 'true';
@@ -385,7 +477,6 @@ function renderKatexSpanWithRecovery(spanElement, force = false) {
     push(original.replace(/\\left\b/g, '').replace(/\\right\b/g, ''));
     if (/^\{[\s\S]+\}$/.test(original)) push(original.slice(1, -1));
 
-    // Get custom macros (keys WITHOUT backslash)
     const macros = getCustomKaTeXMacros();
 
     for (const latexString of candidates) {
@@ -397,7 +488,7 @@ function renderKatexSpanWithRecovery(spanElement, force = false) {
                 trust: true,
                 strict: 'ignore',
                 output: 'htmlAndMathml',
-                macros: macros  // <-- CORRECT: macros object with keys without backslash
+                macros: macros
             });
             if (spanElement.querySelector('.katex') && !spanElement.querySelector('.katex-error')) {
                 spanElement.setAttribute('data-latex', latexString);
@@ -410,7 +501,6 @@ function renderKatexSpanWithRecovery(spanElement, force = false) {
         }
     }
 
-    // All candidates failed — keep latex visible as fallback
     spanElement.classList.add('katex-render-failed');
     spanElement.setAttribute('data-render-pending', 'true');
     showLatexFallback(spanElement, original);
@@ -575,7 +665,11 @@ function convertKatexSpansToLatexSource(htmlString) {
     temp.querySelectorAll('.katex-eq').forEach(eq => {
         const latex = eq.getAttribute('data-latex') || eq.textContent || '';
         const isDisplay = eq.getAttribute('data-display') === 'true';
-        eq.parentNode.replaceChild(document.createTextNode(isDisplay ? `$$${latex}$$` : `$${latex}$`), eq);
+        const delimiter = isDisplay ? '$$' : '$';
+        // Check if the original content had \[...\] or \begin{...}
+        // We'll use a heuristic: if the latex contains \begin{...}\end{...} or is longer than a single line, use display.
+        // Actually we just use the data-display attribute.
+        eq.parentNode.replaceChild(document.createTextNode(delimiter + latex + delimiter), eq);
     });
     return temp.innerHTML;
 }
