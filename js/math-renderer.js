@@ -188,8 +188,24 @@ function processMathEquationsInContainer(container) {
 // ===== MATH ARTIFACT REPAIR =====
 function repairVisibleEscapeSequencesInText(text) {
     let value = String(text || '');
-    value = value.replace(/\\\\r\\\\n/g, '\n').replace(/\\\\n(?=[A-Za-z])/g, '\\n').replace(/\\\\r(?=[A-Za-z])/g, '\\r').replace(/\\\\t(?=[A-Za-z])/g, '\\t');
-    value = value.replace(/\\r\\n/g, '\n').replace(/\\r/g, '\n').replace(/\\t/g, '\t');
+    // Collapse a literal escaped CRLF ("\r\n" as two chars, not a real newline)
+    // into an actual newline.
+    value = value.replace(/\\r\\n/g, '\n');
+    // Collapse double-escaped \\n \\r \\t (from JSON/AI double-escaping) down to
+    // a single backslash form, but only defer the decision to the whitelist
+    // check below — never strip here.
+    value = value.replace(/\\\\([nrt])(?=[A-Za-z])/g, '\\$1');
+    // PERMANENT FIX: previously there was an extra unconditional pass here
+    // (`.replace(/\\r/g, '\n').replace(/\\t/g, '\t')`) that stripped every
+    // literal "\r" / "\t" BEFORE the known-LaTeX-command check below ever ran.
+    // That silently destroyed the backslash on every real command starting
+    // with r/t — \text, \times, \right, \rightarrow, \tan, \theta, \tau,
+    // \tilde, \to, \triangle, \tfrac, \tbinom, etc. — turning "\text{ mL}"
+    // into a tab character followed by "ext{ mL}", which is exactly the
+    // "ext{...}" / "imes" / "ightarrow" / "ight)" corruption seen in KaTeX
+    // fallback boxes. All n/t/r escape-artifact handling now goes through the
+    // single whitelist-aware pass below, so no known LaTeX command is ever
+    // mistaken for a stray escape sequence.
     value = value.replace(/\\([A-Za-z]+)/g, (full, cmd) => {
         if (isKnownLatexCommand(cmd)) return full;
         if (cmd.startsWith('n')) return '\n' + cmd.slice(1);
