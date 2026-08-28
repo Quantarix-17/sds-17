@@ -5,14 +5,17 @@
 const APP_CONFIG = {
   TEMPERATURE: 0.3,
   
+  // Token budgets are removed for PDF generation – AI can use as many tokens as needed
+  // (model's own maximum will be used automatically)
+  // Kept only for reference but not used as limits
   PDF_TOKEN_BUDGETS: Object.freeze({
-    SHORT: 40000,
-    DEFAULT_SINGLE: 32000,
-    STANDARD_BATCH: 14000,
-    LONG_BATCH: 16000,
-    LONG_DIRECT: 64000,
-    EXPANSION: 12000,
-    BEAUTIFY: 64000
+    SHORT: undefined,
+    DEFAULT_SINGLE: undefined,
+    STANDARD_BATCH: undefined,
+    LONG_BATCH: undefined,
+    LONG_DIRECT: undefined,
+    EXPANSION: undefined,
+    BEAUTIFY: undefined
   }),
 
   DEFAULT_SINGLE_MAX_PAGES: 8,
@@ -49,9 +52,9 @@ const APP_CONFIG = {
   ATTACHMENT_MAX_TEXT_CHARS: 100000,
 
   SINGLE_SHOT_ESTIMATED_SECONDS: 16,
-  PLAN_MAX_OUTPUT_TOKENS: 1800,
+  PLAN_MAX_OUTPUT_TOKENS: 1800,   // only for planning, not for document generation
   ROUTER_MAX_OUTPUT_TOKENS: 1200,
-  CONTINUATION_MAX_LOOPS: 8,
+  CONTINUATION_MAX_LOOPS: 8,      // still used for truncation recovery
   LONG_EXPANSION_MAX_ROUNDS: 6
 };
 
@@ -100,26 +103,20 @@ const AI_MODEL_AUTOSWITCH_KEY = 'aiModelAutoSwitchEnabled_v1';
 const OCR_PREFERRED_MODEL_ID_KEY = 'OCR_PREFERRED_MODEL_ID';
 const PDF_VISUAL_FORMAT_KEY = 'aiPdfStudio.visualFormat';
 const PDF_TEXT_FORMAT_KEY = 'aiPdfStudio.textFormat';
-const STORAGE_KEY = 'aiDocProState_v22'; // legacy, kept for compatibility
+const STORAGE_KEY = 'aiDocProState_v22';
 
 // ========================================================================
 // HELPER FUNCTIONS
 // ========================================================================
 
 function getPDFTokenBudget(lengthMode) {
-  switch (lengthMode) {
-    case 'short_pdf': return APP_CONFIG.PDF_TOKEN_BUDGETS.SHORT;
-    case 'long_pdf': return APP_CONFIG.PDF_TOKEN_BUDGETS.LONG_BATCH;
-    case 'standard': return APP_CONFIG.PDF_TOKEN_BUDGETS.STANDARD_BATCH;
-    default: return APP_CONFIG.PDF_TOKEN_BUDGETS.DEFAULT_SINGLE;
-  }
+  // Returns undefined – no token limit
+  return undefined;
 }
 
 function getGenerationMaxTokens(lengthMode, singleShot = false) {
-  if (!singleShot) return getPDFTokenBudget(lengthMode);
-  if (lengthMode === 'short_pdf') return APP_CONFIG.PDF_TOKEN_BUDGETS.SHORT;
-  if (lengthMode === 'long_pdf') return APP_CONFIG.PDF_TOKEN_BUDGETS.LONG_DIRECT;
-  return APP_CONFIG.PDF_TOKEN_BUDGETS.DEFAULT_SINGLE;
+  // Returns undefined – no token limit
+  return undefined;
 }
 
 function getDynamicSectionBatchSize(lengthMode, totalSections, estimatedPages = 0) {
@@ -129,8 +126,6 @@ function getDynamicSectionBatchSize(lengthMode, totalSections, estimatedPages = 
 
 function isMobileDeviceLayout() {
   try {
-    // Width is the source of truth. Pointer/touch heuristics were skipping scale on
-    // some mobile browsers (desktop-mode, fine pointer, etc.) and left pages clipped.
     if (window.innerWidth <= 850 || (document.documentElement.clientWidth || 0) <= 850) return true;
     return window.matchMedia('(max-width: 850px)').matches;
   } catch (_) {
