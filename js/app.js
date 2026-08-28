@@ -1562,7 +1562,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
   }
 }
 
-// ===== GENERATE DEFAULT PDF DIRECT MODE =====
+// ===== GENERATE DEFAULT PDF DIRECT MODE (UPDATED: MCQ instruction) =====
 async function generateDefaultPDFDirectMode(promptText, fileContextString, isMonochromeMode, isEmptyCanvas, isReplaceIntent, modelsUsedSet, intentPayload) {
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const existingHTML = (!isEmptyCanvas && !isReplaceIntent) ? (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '') : '';
@@ -1577,7 +1577,15 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: null, language: outputLanguage, sectionMode: false }) : ''}\n` +
     `DEFAULT DIRECT RULES: create the complete requested document in one continuous generation flow. Follow the user's requested scope, depth and detail. There is no fixed page target. Do not intentionally compress a detailed request, and do not pad a simple request. Use natural headings, definitions, explanations, formulas, worked examples, tables and useful visuals where they materially improve the document.\n` +
-    `IMPORTANT: Do NOT include MCQ, quiz, or exam-style content unless the user explicitly selected @Exam command. If the user did not select @Exam, generate a regular study note/document without any MCQ.\n` +
+    `IMPORTANT: If the user asks for MCQ questions, "tick" questions, or exam questions, generate them using the professional MCQ format:\n` +
+    `- Wrap ALL questions in one <div class="quiz-container">.\n` +
+    `- Each question MUST be one <div class="quiz-item"> containing exactly one <div class="quiz-question"> and one <div class="quiz-options">.\n` +
+    `- Each <div class="quiz-options"> MUST contain exactly FOUR <div class="quiz-option"> choices (A, B, C, D).\n` +
+    `- After all questions, include one <div class="quiz-answer-key"><div class="quiz-answer-title">Answer Key</div><div class="quiz-answer-grid">...</div></div>.\n` +
+    `- The Answer Key must contain exactly one <div class="quiz-answer-item"> per question with the correct option letter.\n` +
+    `- Use the exam-document class on body for two-column layout.\n` +
+    `- For Bengali questions, use quiz-item.bangla-question with ক, খ, গ, ঘ labels.\n` +
+    `If the user did NOT ask for MCQ/exam questions, generate a regular study note/document without any MCQ.\n` +
     `OUTPUT SAFETY: the result must contain substantial visible explanatory content, not just a title or outline. Use semantic HTML suitable for the existing A4 pagination engine.\n`;
 
   const userPrompt =
