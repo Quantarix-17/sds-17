@@ -103,7 +103,7 @@ function isDocumentOperationIntent(id) {
   return ['edit', 'refine', 'refine_equation', 'redesign_diagram', 'beautify', 'refine_pagination'].includes(id);
 }
 
-// ===== DEPENDENCY MANAGEMENT =====
+// ===== DEPENDENCY MANAGEMENT (UPDATED: auto-add @Exam & @Create PDF for MCQ) =====
 function ensureCommandDependencies(cmd, { silent = false } = {}) {
   if (!cmd) return false;
   if (!window.APP_STATE) return false;
@@ -121,6 +121,30 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
   if (hasChat) {
     if (!silent) showAtCommandToast('Remove @Chat before selecting a document command.');
     return false;
+  }
+
+  // FIX: If user selects MCQ/CQ/Short Question, auto-add @Exam and @Create PDF
+  if (cmd.id === 'mcq' || cmd.id === 'cq' || cmd.id === 'short_question') {
+    if (!hasExam) {
+      const examCmd = getAtCommandById('exam');
+      if (examCmd) {
+        window.APP_STATE.selectedCommands.unshift({
+          id: examCmd.id, category: examCmd.category, label: examCmd.label,
+          icon: examCmd.icon, param: null, implicit: true
+        });
+        if (!silent) displayToastNotification('🔍 @Exam auto-enabled for MCQ generation');
+      }
+    }
+    if (!hasCreatePdf) {
+      const createPdfCmd = getAtCommandById('create_pdf');
+      if (createPdfCmd) {
+        window.APP_STATE.selectedCommands.unshift({
+          id: createPdfCmd.id, category: createPdfCmd.category, label: createPdfCmd.label,
+          icon: createPdfCmd.icon, param: null, implicit: true
+        });
+        if (!silent) displayToastNotification('📄 @Create PDF auto-enabled for document generation');
+      }
+    }
   }
 
   if (cmd.id === 'exercise' && !hasExam && !hasCreatePdf) {
@@ -358,24 +382,6 @@ function shakeChatInputField() {
 }
 
 // ===== ADD / REMOVE COMMANDS =====
-// ------------------------------------------------------------------------
-// FIX (2026-08-27): @Create PDF (and @Exam) were silently failing to be
-// added to APP_STATE.selectedCommands.
-//
-// Root cause: ensureCommandDependencies() reassigns
-// `window.APP_STATE.selectedCommands = window.APP_STATE.selectedCommands.filter(...)`
-// whenever cmd.id is 'create_pdf' or 'exam' (this ALWAYS creates a brand
-// new array via .filter(), even when nothing is actually removed).
-//
-// attemptAddAtCommand() used to cache the OLD array reference in a
-// `const sel` BEFORE calling ensureCommandDependencies(), and then kept
-// pushing/splicing onto that now-orphaned old array afterward. The new
-// command was therefore added to an array nobody was pointing to anymore,
-// so the chip never rendered and buildIntentPayload() never saw the intent.
-//
-// Fix: `sel` is now `let` and gets re-read from window.APP_STATE right
-// after any point that might have reassigned window.APP_STATE.selectedCommands.
-// ------------------------------------------------------------------------
 function attemptAddAtCommand(cmd, param, options = {}) {
   if (!cmd || !window.APP_STATE) return false;
   let sel = window.APP_STATE.selectedCommands;
@@ -397,20 +403,17 @@ function attemptAddAtCommand(cmd, param, options = {}) {
 
   if (!ensureCommandDependencies(cmd, { silent: options.silentParent !== false })) return false;
 
-  // FIX: ensureCommandDependencies() may have replaced window.APP_STATE.selectedCommands
-  // with a brand-new array (e.g. via .filter() when cmd.id === 'create_pdf' or 'exam').
-  // Re-read it here so we don't keep mutating a now-orphaned old array.
   sel = window.APP_STATE.selectedCommands;
 
   if (cmd.category === 'intent') {
     const existingPrimary = sel.find(c => c.category === 'intent' && c.id !== cmd.id && c.id !== 'create_pdf' && c.id !== cmd.autoParent);
     if (existingPrimary && existingPrimary.id !== 'exam') {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== existingPrimary.id);
-      sel = window.APP_STATE.selectedCommands; // FIX: refresh again after reassignment
+      sel = window.APP_STATE.selectedCommands;
     }
     if (cmd.id === 'exam') {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'create_pdf');
-      sel = window.APP_STATE.selectedCommands; // FIX: refresh again after reassignment
+      sel = window.APP_STATE.selectedCommands;
     }
   }
 
@@ -418,7 +421,7 @@ function attemptAddAtCommand(cmd, param, options = {}) {
     const existingSameCategory = sel.find(c => c.category === cmd.category && c.id !== cmd.id && !c.implicit);
     if (existingSameCategory) {
       const idx = sel.indexOf(existingSameCategory);
-      if (idx > -1) sel.splice(idx, 1); // FIX: splice the SAME array we just searched (sel)
+      if (idx > -1) sel.splice(idx, 1);
       displayToastNotification(`Replaced '@${existingSameCategory.label}' with '@${cmd.label}'`);
     }
   }
@@ -571,9 +574,6 @@ function renderAtCommandMenuList() {
   hint.textContent = 'Select an @ command';
   menu.appendChild(hint);
 
-  // Single unified command list — no category tabs, everything in one section.
-
-  // Command items
   AT_MENU_STATE.filtered.forEach((cmd, idx) => {
     const disabled = isAtCommandDisabled(cmd);
     const disabledReason = disabled ? getAtCommandDisabledReason(cmd) : null;
@@ -820,7 +820,7 @@ function parseAndStripInlineCommandTokens(text) {
   return result;
 }
 
-// ===== BUILD INTENT PAYLOAD =====
+// ===== BUILD INTENT PAYLOAD (UPDATED: better MCQ detection) =====
 function buildIntentPayload() {
   if (!window.APP_STATE) return null;
   const sel = window.APP_STATE.selectedCommands;
@@ -834,8 +834,14 @@ function buildIntentPayload() {
   const visualCmd = findCat('visual');
   const contentCmds = sel.filter(c => c.category === 'content' || c.category === 'practice');
 
+  // FIX: Auto-detect MCQ from content commands
+  const hasMcq = contentCmds.some(c => c.id === 'mcq');
+  const hasCq = contentCmds.some(c => c.id === 'cq');
+  const hasShort = contentCmds.some(c => c.id === 'short_question');
+  const hasExercise = contentCmds.some(c => c.id === 'exercise');
+
   const questionCounts = {
-    mcq: (() => { const c = sel.find(x => x.id === 'mcq'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : null; })(),
+    mcq: (() => { const c = sel.find(x => x.id === 'mcq'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : (hasMcq ? 20 : null); })(),
     cq: (() => { const c = sel.find(x => x.id === 'cq'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : null; })(),
     short_question: (() => { const c = sel.find(x => x.id === 'short_question'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : null; })()
   };
@@ -861,7 +867,12 @@ function buildIntentPayload() {
     sectionMode: typeof getSectionModeEnabled === 'function' ? getSectionModeEnabled() : false,
     refinePaginationPage: (intentCmd.id === 'refine_pagination' && intentCmd.param) ? parseInt(intentCmd.param, 10) : null,
     editPages: (intentCmd.id === 'edit' && intentCmd.param) ?
-      intentCmd.param.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0) : null
+      intentCmd.param.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0) : null,
+    // FIX: Auto-detect if this is an MCQ request even without explicit @mcq
+    hasMcq: hasMcq,
+    hasCq: hasCq,
+    hasShort: hasShort,
+    hasExercise: hasExercise
   };
 }
 
@@ -870,7 +881,7 @@ function buildAtCommandInstructionText(intentPayload) {
   if (!intentPayload || !intentPayload.intent) return '';
   const intentLabels = {
     chat: 'CHAT — plain conversation, reply with action "chat_reply" only, do NOT edit the document',
-    create_pdf: 'CREATE PDF — create a new document/note',
+    create_pdf: 'CREATE PDF — create a new document/note. If the user asks for "tick" or MCQ questions, generate them in the professional MCQ format with quiz-container, quiz-item, quiz-question, quiz-options, and quiz-answer-key.',
     exam: 'EXAM — create an exam paper using the selected exam question types and difficulty level; @Exercise may also be included as a practice component',
     edit: 'EDIT — edit/modify the current canvas content',
     refine: 'REFINE — inspect the requested part and improve it while preserving useful information',
@@ -892,14 +903,12 @@ function buildAtCommandInstructionText(intentPayload) {
     if (intentPayload.editPages && intentPayload.editPages.length) parts.push(`SELECTED EDIT PAGES: ${intentPayload.editPages.join(', ')}.`);
   }
 
-  // LENGTH (only meaningful with @Create PDF)
   if (intentPayload.length === 'long_pdf') {
     parts.push('LENGTH: LONG — produce a genuinely long, comprehensive document with full depth, detail and examples. Do not shorten or summarize.');
   } else if (intentPayload.length === 'short_pdf') {
     parts.push('LENGTH: SHORT — produce a compact document covering only essential concepts and examples. Avoid unnecessary elaboration.');
   }
 
-  // DIFFICULTY (exam)
   if (intentPayload.difficulty === 'easy') {
     parts.push('DIFFICULTY: EASY — use simple, accessible language and easier questions.');
   } else if (intentPayload.difficulty === 'standard') {
@@ -908,22 +917,18 @@ function buildAtCommandInstructionText(intentPayload) {
     parts.push('DIFFICULTY: HARD — use advanced, challenging language and questions.');
   }
 
-  // TARGET PAGE (for edit/refine-type operations other than refine_pagination, already handled above)
   if (intentPayload.pageTarget && intentPayload.intent !== 'edit' && intentPayload.intent !== 'refine_pagination') {
     parts.push(`TARGET PAGE: Apply this action only to page ${intentPayload.pageTarget}. Preserve all other pages exactly as-is.`);
   }
 
-  // LANGUAGE
   if (intentPayload.language) {
     parts.push(`LANGUAGE: Write the entire output in "${intentPayload.language}". Do not mix in other languages unless technical terms require it.`);
   }
 
-  // VISUAL / CANVAS
   if (intentPayload.visual === 'canvas') {
     parts.push('VISUAL SUPPORT: CANVAS — increase useful visual elements (tables, diagrams, concept maps) wherever they genuinely help understanding.');
   }
 
-  // CONTENT TYPES (exam question types + exercise), with counts
   if (intentPayload.contentTypes && intentPayload.contentTypes.length) {
     const contentLabels = {
       mcq: 'MCQ (multiple-choice questions)',
@@ -939,8 +944,14 @@ function buildAtCommandInstructionText(intentPayload) {
     parts.push(`CONTENT TYPES TO INCLUDE: ${contentParts.join(', ')}.`);
   }
 
+  // FIX: If user asked for MCQ but no @mcq selected, auto-detect from prompt
+  if (intentPayload.hasMcq || intentPayload.contentTypes?.includes('mcq')) {
+    parts.push('MCQ MODE ACTIVE: Generate professional MCQ questions using the quiz-container format.');
+  }
+
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
 }
+
 // ============================================================
 // WINDOW EXPOSURE – Command Menu
 // ============================================================
