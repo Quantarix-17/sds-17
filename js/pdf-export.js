@@ -692,11 +692,6 @@ async function _runLivePDFIframePreview(requestedToken) {
     return;
   }
 
-  // Check the cache BEFORE showing any loading UI. Previously the "Preparing
-  // PDF preview..." overlay was shown first and only checked afterwards,
-  // so even an unchanged document flashed "preparing" every time the PDF
-  // tab was reopened. Now, if nothing changed, we skip straight through
-  // with no loading flash at all.
   const earlySignature = hashPDFPreviewSignature();
   const earlyIsMonochromeMode = document.body.classList.contains('photocopy-mode');
   const earlyPreviewMode = earlyIsMonochromeMode ? 'mono' : 'color';
@@ -908,12 +903,6 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
       html, body { margin:0; padding:0; height:100%; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
       body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
-      /* NOTE: content-visibility:auto was removed here on purpose. This document is
-         rendered in a hidden, off-screen iframe (left:-10000px) purely to drive
-         window.print()/"Save as PDF" — it is never scrolled into a real viewport,
-         so pages never satisfy the browser's "near viewport" heuristic and can be
-         left permanently unrendered (blank) even with a print-media override.
-         This was the cause of the 2nd page / last page printing blank. */
       .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; }
       .pdf-page { background:#fff; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
       .pdf-footer { position:absolute; bottom:${PDF_LAYOUT.footerBottom}px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
@@ -1202,9 +1191,6 @@ function applyLocalMarginSafetyFixes(result) {
       const page = typeof createPDFMeasurePage === 'function' ? createPDFMeasurePage(result.offscreen) : null;
       return page;
     }) : { extraPages: [] };
-    // Use the same safeHeight-aware check as everywhere else (pageFits reserves
-    // room for the footer). Comparing raw scrollHeight to PDF_LAYOUT.height let
-    // pages pass this check while still overlapping the footer number/margin.
     p.overflow = !pageFits(p.el);
     p.html = p.el.innerHTML;
     if (extraPages && extraPages.length) {
@@ -1266,10 +1252,6 @@ function switchPreviewTab(tabName) {
         iframe.style.flex = '1 1 auto';
       }
     }
-    // Only flash the loading overlay if the preview will actually be
-    // regenerated. Previously this always showed "Loading PDF preview...",
-    // so re-opening the PDF tab with an unchanged document still showed the
-    // preparing state briefly every time.
     const iframeForCheck = document.getElementById('pdf-iframe');
     const willReuseCache = iframeForCheck && (iframeForCheck.src || iframeForCheck.srcdoc) &&
       typeof hashPDFPreviewSignature === 'function' &&
@@ -1417,368 +1399,396 @@ function splitOversizedTableToFit(pageEl, createContinuationPage) {
   return newPages;
 }
 
-// ===== APPEND NODE WITH PAGINATION (IMPROVED WITH MCQ SUPPORT) =====
-async function appendNodeWithPagination(node, currentPage, createPage) {
-  if (node.nodeType === Node.TEXT_NODE) {
-    if (!node.textContent.trim()) return currentPage;
-    const wrapper = document.createElement('p');
-    wrapper.textContent = node.textContent.trim();
-    const result = await splitPlainTextElement(wrapper, currentPage, createPage);
-    return result.page;
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) return currentPage;
-  if (node.classList && node.classList.contains('manual-page-break')) {
-    return pageHasContent(currentPage) ? createPage() : currentPage;
-  }
-
-  // ---- SPECIAL: MCQ Quiz Container ----
-  if (node.classList && node.classList.contains('quiz-container')) {
-    const items = Array.from(node.querySelectorAll(':scope > .quiz-item'));
-    if (items.length === 0) {
-      // Empty quiz, just add it
-      if (pageHasContent(currentPage)) currentPage = createPage();
-      const clone = node.cloneNode(true);
-      currentPage.appendChild(clone);
-      return currentPage;
+// ===== UPDATED splitPlainTextElement with math re‑processing =====
+async function splitPlainTextElement(node, currentPage, createPage) {
+    const textContent = node.textContent || '';
+    const words = textContent.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) {
+        return { page: currentPage, didSplit: false };
     }
 
-    // Check if the entire quiz fits
-    const testClone = node.cloneNode(true);
-    const tempPage = currentPage.cloneNode(true);
-    const footer = tempPage.querySelector('.page-footer-number');
-    if (footer) footer.remove();
-    tempPage.appendChild(testClone);
-    const measurePage = document.createElement('div');
-    measurePage.className = 'doc-page-canvas pdf-export-measure-page';
-    measurePage.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
-    document.body.appendChild(measurePage);
-    measurePage.innerHTML = '';
-    Array.from(tempPage.childNodes).forEach(child => {
-      if (!child.classList || !child.classList.contains('page-footer-number')) {
-        measurePage.appendChild(child.cloneNode(true));
-      }
-    });
-    measurePage.style.display = 'block';
-    void measurePage.offsetHeight;
-    const fits = measurePage.scrollHeight <= 1123;
-    measurePage.style.display = '';
-    measurePage.innerHTML = '';
-    document.body.removeChild(measurePage);
+    let page = currentPage;
+    let chunk = cloneElementShell(node);
+    page.appendChild(chunk);
+    let text = '';
+    let didSplit = false;
 
-    if (fits) {
-      const clone = node.cloneNode(true);
-      currentPage.appendChild(clone);
-      return currentPage;
-    }
+    const checkFit = async (el) => {
+        // Re-process math on the page after adding content
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+        await waitForImagesToLoad(page);
+        if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
+        return pageFits(page);
+    };
 
-    // If doesn't fit, split by items
-    if (pageHasContent(currentPage)) {
-      currentPage = createPage();
-    }
-
-    let quizContainer = document.createElement('div');
-    quizContainer.className = 'quiz-container';
-    // Copy attributes
-    Array.from(node.attributes).forEach(attr => {
-      if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
-    });
-
-    let currentPageForQuiz = currentPage;
-    currentPageForQuiz.appendChild(quizContainer);
-    let quizHasContent = false;
-
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const itemClone = item.cloneNode(true);
-      quizContainer.appendChild(itemClone);
-
-      // Check if this page with this item fits
-      const testPage = currentPageForQuiz.cloneNode(true);
-      const footer2 = testPage.querySelector('.page-footer-number');
-      if (footer2) footer2.remove();
-      const measurePage2 = document.createElement('div');
-      measurePage2.className = 'doc-page-canvas pdf-export-measure-page';
-      measurePage2.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
-      document.body.appendChild(measurePage2);
-      measurePage2.innerHTML = '';
-      Array.from(testPage.childNodes).forEach(child => {
-        if (!child.classList || !child.classList.contains('page-footer-number')) {
-          measurePage2.appendChild(child.cloneNode(true));
-        }
-      });
-      measurePage2.style.display = 'block';
-      void measurePage2.offsetHeight;
-      const fits2 = measurePage2.scrollHeight <= 1123;
-      measurePage2.style.display = '';
-      measurePage2.innerHTML = '';
-      document.body.removeChild(measurePage2);
-
-      if (!fits2) {
-        // Remove the last item
-        quizContainer.removeChild(itemClone);
-
-        // If quiz has content, we're done with this page
-        if (quizHasContent) {
-          // Create a new page and new quiz container
-          currentPageForQuiz = createPage();
-          quizContainer = document.createElement('div');
-          quizContainer.className = 'quiz-container';
-          Array.from(node.attributes).forEach(attr => {
-            if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
-          });
-          currentPageForQuiz.appendChild(quizContainer);
-          // Add the item that didn't fit
-          const newItemClone = item.cloneNode(true);
-          quizContainer.appendChild(newItemClone);
-          quizHasContent = true;
+    for (let i = 0; i < words.length; i++) {
+        const candidate = text ? `${text} ${words[i]}` : words[i];
+        chunk.textContent = candidate;
+        
+        if (!(await checkFit(chunk))) {
+            if (!text) {
+                if (candidate.length > 20) {
+                    const chars = candidate.split('');
+                    let subText = '';
+                    let subChunk = cloneElementShell(node);
+                    page.appendChild(subChunk);
+                    for (let j = 0; j < chars.length; j++) {
+                        const subCandidate = subText ? subText + chars[j] : chars[j];
+                        subChunk.textContent = subCandidate;
+                        if (!(await checkFit(subChunk))) {
+                            if (subText) {
+                                subChunk.remove();
+                                if (pageHasContent(page)) {
+                                    page = createPage();
+                                    // Re-process math on the new page
+                                    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+                                    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+                                }
+                                subChunk = cloneElementShell(node);
+                                page.appendChild(subChunk);
+                                subText = chars[j];
+                                subChunk.textContent = subText;
+                            } else {
+                                subChunk.remove();
+                                if (pageHasContent(page)) {
+                                    page = createPage();
+                                    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+                                    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+                                }
+                                chunk = cloneElementShell(node);
+                                page.appendChild(chunk);
+                                chunk.textContent = candidate;
+                                didSplit = true;
+                                break;
+                            }
+                        } else {
+                            subText = subCandidate;
+                        }
+                    }
+                    if (chunk.parentNode) chunk.remove();
+                    didSplit = true;
+                    break;
+                } else {
+                    chunk.remove();
+                    if (pageHasContent(page)) {
+                        page = createPage();
+                        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+                        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+                    }
+                    chunk = cloneElementShell(node);
+                    page.appendChild(chunk);
+                    chunk.textContent = candidate;
+                    didSplit = true;
+                    break;
+                }
+            } else {
+                chunk.textContent = text;
+                const remainingWords = words.slice(i);
+                if (remainingWords.length > 0) {
+                    const remainingText = remainingWords.join(' ');
+                    const newPage = createPage();
+                    // Re-process math on the new page
+                    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(newPage);
+                    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(newPage);
+                    const newChunk = cloneElementShell(node);
+                    newPage.appendChild(newChunk);
+                    newChunk.textContent = remainingText;
+                    didSplit = true;
+                }
+                break;
+            }
         } else {
-          // Quiz is empty, add the item directly
-          const newItemClone2 = item.cloneNode(true);
-          quizContainer.appendChild(newItemClone2);
-          quizHasContent = true;
+            text = candidate;
         }
-      } else {
-        quizHasContent = true;
-      }
     }
-    return currentPageForQuiz;
-  }
 
-  // ---- SPECIAL: OMR Sheet ----
-  if (node.classList && node.classList.contains('omr-sheet-page')) {
-    if (pageHasContent(currentPage)) {
-      currentPage = createPage();
+    if (!didSplit && text) {
+        if (!chunk.parentNode) {
+            page.appendChild(chunk);
+            chunk.textContent = text;
+        }
+        // Ensure math is processed on the final page
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+        return { page, didSplit: false };
     }
-    const clone = node.cloneNode(true);
-    currentPage.appendChild(clone);
-    return currentPage;
-  }
 
-  // ---- SPECIAL: Exam Header ----
-  if (node.classList && node.classList.contains('exam-header-block')) {
-    if (pageHasContent(currentPage)) {
-      currentPage = createPage();
+    return { page, didSplit };
+}
+
+// ===== appendNodeWithPagination (updated with math processing safety) =====
+async function appendNodeWithPagination(node, currentPage, createPage) {
+    if (node.nodeType === Node.TEXT_NODE) {
+        if (!node.textContent.trim()) return currentPage;
+        const wrapper = document.createElement('p');
+        wrapper.textContent = node.textContent.trim();
+        const result = await splitPlainTextElement(wrapper, currentPage, createPage);
+        // Ensure math is processed on the final page
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(result.page);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(result.page);
+        return result.page;
     }
-    const clone = node.cloneNode(true);
-    currentPage.appendChild(clone);
-    return currentPage;
-  }
+    if (node.nodeType !== Node.ELEMENT_NODE) return currentPage;
+    if (node.classList && node.classList.contains('manual-page-break')) {
+        return pageHasContent(currentPage) ? createPage() : currentPage;
+    }
 
-  // ---- Normal node ----
-  const testClone2 = appendClone(currentPage, node);
-  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone2);
-  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(testClone2);
-  await waitForImagesToLoad(testClone2);
-  if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(testClone2);
+    // ---- SPECIAL: MCQ Quiz Container ----
+    if (node.classList && node.classList.contains('quiz-container')) {
+        const items = Array.from(node.querySelectorAll(':scope > .quiz-item'));
+        if (items.length === 0) {
+            if (pageHasContent(currentPage)) currentPage = createPage();
+            const clone = node.cloneNode(true);
+            currentPage.appendChild(clone);
+            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
+            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
+            return currentPage;
+        }
 
-  if (pageFits(currentPage)) return currentPage;
+        // Check if the entire quiz fits
+        const testClone = node.cloneNode(true);
+        const tempPage = currentPage.cloneNode(true);
+        const footer = tempPage.querySelector('.page-footer-number');
+        if (footer) footer.remove();
+        tempPage.appendChild(testClone);
+        const measurePage = document.createElement('div');
+        measurePage.className = 'doc-page-canvas pdf-export-measure-page';
+        measurePage.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
+        document.body.appendChild(measurePage);
+        measurePage.innerHTML = '';
+        Array.from(tempPage.childNodes).forEach(child => {
+            if (!child.classList || !child.classList.contains('page-footer-number')) {
+                measurePage.appendChild(child.cloneNode(true));
+            }
+        });
+        measurePage.style.display = 'block';
+        void measurePage.offsetHeight;
+        const fits = measurePage.scrollHeight <= 1123;
+        measurePage.style.display = '';
+        measurePage.innerHTML = '';
+        document.body.removeChild(measurePage);
 
-  currentPage.removeChild(testClone2);
+        if (fits) {
+            const clone = node.cloneNode(true);
+            currentPage.appendChild(clone);
+            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
+            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
+            return currentPage;
+        }
 
-  // Handle text splitting for paragraphs
-  const childElements = Array.from(node.children || []);
-  const hasOnlyText = childElements.length === 0;
-  const isBreakableText = /^(P|LI|BLOCKQUOTE|PRE|CODE|DIV)$/i.test(node.tagName) && hasOnlyText;
-  
-  if (isBreakableText) {
+        if (pageHasContent(currentPage)) currentPage = createPage();
+
+        let quizContainer = document.createElement('div');
+        quizContainer.className = 'quiz-container';
+        Array.from(node.attributes).forEach(attr => {
+            if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
+        });
+
+        let currentPageForQuiz = currentPage;
+        currentPageForQuiz.appendChild(quizContainer);
+        let quizHasContent = false;
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const itemClone = item.cloneNode(true);
+            quizContainer.appendChild(itemClone);
+
+            // Check fit
+            const testPage = currentPageForQuiz.cloneNode(true);
+            const footer2 = testPage.querySelector('.page-footer-number');
+            if (footer2) footer2.remove();
+            const measurePage2 = document.createElement('div');
+            measurePage2.className = 'doc-page-canvas pdf-export-measure-page';
+            measurePage2.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(measurePage2);
+            measurePage2.innerHTML = '';
+            Array.from(testPage.childNodes).forEach(child => {
+                if (!child.classList || !child.classList.contains('page-footer-number')) {
+                    measurePage2.appendChild(child.cloneNode(true));
+                }
+            });
+            measurePage2.style.display = 'block';
+            void measurePage2.offsetHeight;
+            const fits2 = measurePage2.scrollHeight <= 1123;
+            measurePage2.style.display = '';
+            measurePage2.innerHTML = '';
+            document.body.removeChild(measurePage2);
+
+            if (!fits2) {
+                quizContainer.removeChild(itemClone);
+                if (quizHasContent) {
+                    currentPageForQuiz = createPage();
+                    // Process math on new page
+                    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
+                    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
+                    quizContainer = document.createElement('div');
+                    quizContainer.className = 'quiz-container';
+                    Array.from(node.attributes).forEach(attr => {
+                        if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
+                    });
+                    currentPageForQuiz.appendChild(quizContainer);
+                    const newItemClone = item.cloneNode(true);
+                    quizContainer.appendChild(newItemClone);
+                    quizHasContent = true;
+                } else {
+                    const newItemClone2 = item.cloneNode(true);
+                    quizContainer.appendChild(newItemClone2);
+                    quizHasContent = true;
+                }
+            } else {
+                quizHasContent = true;
+            }
+        }
+        // Ensure math is processed on the final page
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
+        return currentPageForQuiz;
+    }
+
+    // ---- SPECIAL: OMR Sheet ----
+    if (node.classList && node.classList.contains('omr-sheet-page')) {
+        if (pageHasContent(currentPage)) currentPage = createPage();
+        const clone = node.cloneNode(true);
+        currentPage.appendChild(clone);
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
+        return currentPage;
+    }
+
+    // ---- SPECIAL: Exam Header ----
+    if (node.classList && node.classList.contains('exam-header-block')) {
+        if (pageHasContent(currentPage)) currentPage = createPage();
+        const clone = node.cloneNode(true);
+        currentPage.appendChild(clone);
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
+        return currentPage;
+    }
+
+    // ---- Normal node ----
+    const testClone2 = appendClone(currentPage, node);
+    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone2);
+    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(testClone2);
+    await waitForImagesToLoad(testClone2);
+    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(testClone2);
+
+    if (pageFits(currentPage)) return currentPage;
+
+    currentPage.removeChild(testClone2);
+
+    const childElements = Array.from(node.children || []);
+    const hasOnlyText = childElements.length === 0;
+    const isBreakableText = /^(P|LI|BLOCKQUOTE|PRE|CODE|DIV)$/i.test(node.tagName) && hasOnlyText;
+    
+    if (isBreakableText) {
+        if (pageHasContent(currentPage)) currentPage = createPage();
+        const result = await splitPlainTextElement(node, currentPage, createPage);
+        // Already processed inside splitPlainTextElement
+        return result.page;
+    }
+
+    if (childElements.length && !/^(IMG|SVG|CANVAS|TABLE|HR)$/i.test(node.tagName)) {
+        if (pageHasContent(currentPage)) currentPage = createPage();
+        const result = await splitChildFlowElement(node, currentPage, createPage);
+        // Ensure math on final page
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(result.page);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(result.page);
+        return result.page;
+    }
+
     if (pageHasContent(currentPage)) currentPage = createPage();
-    return (await splitPlainTextElement(node, currentPage, createPage)).page;
-  }
-
-  if (childElements.length && !/^(IMG|SVG|CANVAS|TABLE|HR)$/i.test(node.tagName)) {
-    if (pageHasContent(currentPage)) currentPage = createPage();
-    return (await splitChildFlowElement(node, currentPage, createPage)).page;
-  }
-
-  if (pageHasContent(currentPage)) currentPage = createPage();
-  const finalClone = appendClone(currentPage, node);
-  if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
-  if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(finalClone);
-  await waitForImagesToLoad(finalClone);
-  if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(finalClone);
-  return currentPage;
+    const finalClone = appendClone(currentPage, node);
+    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
+    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(finalClone);
+    await waitForImagesToLoad(finalClone);
+    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(finalClone);
+    return currentPage;
 }
 
 function pageHasContent(page) {
-  return Array.from(page.childNodes).some(n => {
-    if (n.nodeType === Node.TEXT_NODE) return !!n.textContent.trim();
-    if (n.nodeType !== Node.ELEMENT_NODE) return false;
-    return !n.classList.contains('page-footer-number') || n.textContent.trim();
-  });
+    return Array.from(page.childNodes).some(n => {
+        if (n.nodeType === Node.TEXT_NODE) return !!n.textContent.trim();
+        if (n.nodeType !== Node.ELEMENT_NODE) return false;
+        return !n.classList.contains('page-footer-number') || n.textContent.trim();
+    });
 }
 
 function appendClone(page, sourceNode) {
-  const clone = sourceNode.cloneNode(true);
-  page.appendChild(clone);
-  return clone;
+    const clone = sourceNode.cloneNode(true);
+    page.appendChild(clone);
+    return clone;
 }
 
 function cloneElementShell(node) {
-  const shell = node.cloneNode(false);
-  shell.removeAttribute('contenteditable');
-  shell.removeAttribute('spellcheck');
-  return shell;
-}
-
-async function splitPlainTextElement(node, currentPage, createPage) {
-  const textContent = node.textContent || '';
-  const words = textContent.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) {
-    return { page: currentPage, didSplit: false };
-  }
-
-  let page = currentPage;
-  let chunk = cloneElementShell(node);
-  page.appendChild(chunk);
-  let text = '';
-  let didSplit = false;
-
-  const checkFit = async (el) => {
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(el);
-    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(el);
-    await waitForImagesToLoad(el);
-    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(el);
-    return pageFits(page);
-  };
-
-  for (let i = 0; i < words.length; i++) {
-    const candidate = text ? `${text} ${words[i]}` : words[i];
-    chunk.textContent = candidate;
-    
-    if (!(await checkFit(chunk))) {
-      if (!text) {
-        if (candidate.length > 20) {
-          const chars = candidate.split('');
-          let subText = '';
-          let subChunk = cloneElementShell(node);
-          page.appendChild(subChunk);
-          for (let j = 0; j < chars.length; j++) {
-            const subCandidate = subText ? subText + chars[j] : chars[j];
-            subChunk.textContent = subCandidate;
-            if (!(await checkFit(subChunk))) {
-              if (subText) {
-                subChunk.remove();
-                if (pageHasContent(page)) {
-                  page = createPage();
-                }
-                subChunk = cloneElementShell(node);
-                page.appendChild(subChunk);
-                subText = chars[j];
-                subChunk.textContent = subText;
-              } else {
-                subChunk.remove();
-                if (pageHasContent(page)) {
-                  page = createPage();
-                }
-                chunk = cloneElementShell(node);
-                page.appendChild(chunk);
-                chunk.textContent = candidate;
-                didSplit = true;
-                break;
-              }
-            } else {
-              subText = subCandidate;
-            }
-          }
-          if (chunk.parentNode) chunk.remove();
-          didSplit = true;
-          break;
-        } else {
-          chunk.remove();
-          if (pageHasContent(page)) {
-            page = createPage();
-          }
-          chunk = cloneElementShell(node);
-          page.appendChild(chunk);
-          chunk.textContent = candidate;
-          didSplit = true;
-          break;
-        }
-      } else {
-        chunk.textContent = text;
-        const remainingWords = words.slice(i);
-        if (remainingWords.length > 0) {
-          const remainingText = remainingWords.join(' ');
-          const newPage = createPage();
-          const newChunk = cloneElementShell(node);
-          newPage.appendChild(newChunk);
-          newChunk.textContent = remainingText;
-          didSplit = true;
-        }
-        break;
-      }
-    } else {
-      text = candidate;
-    }
-  }
-
-  if (!didSplit && text) {
-    if (!chunk.parentNode) {
-      page.appendChild(chunk);
-      chunk.textContent = text;
-    }
-    return { page, didSplit: false };
-  }
-
-  return { page, didSplit };
+    const shell = node.cloneNode(false);
+    shell.removeAttribute('contenteditable');
+    shell.removeAttribute('spellcheck');
+    return shell;
 }
 
 async function splitListElement(node, currentPage, createPage) {
-  const items = Array.from(node.children || []).filter(el => /^(LI)$/i.test(el.tagName));
-  if (!items.length) return { page: currentPage, didSplit: false };
-  let page = currentPage;
-  let list = cloneElementShell(node);
-  page.appendChild(list);
-  list.innerHTML = '';
-  let didSplit = false;
+    const items = Array.from(node.children || []).filter(el => /^(LI)$/i.test(el.tagName));
+    if (!items.length) return { page: currentPage, didSplit: false };
+    let page = currentPage;
+    let list = cloneElementShell(node);
+    page.appendChild(list);
+    list.innerHTML = '';
+    let didSplit = false;
 
-  for (const item of items) {
-    const itemClone = item.cloneNode(true);
-    list.appendChild(itemClone);
-    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
-    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
-    await waitForImagesToLoad(itemClone);
-    if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(itemClone);
-    if (!pageFits(page)) {
-      list.removeChild(itemClone);
-      page = createPage();
-      list = cloneElementShell(node);
-      page.appendChild(list);
-      list.appendChild(itemClone);
-      didSplit = true;
+    for (const item of items) {
+        const itemClone = item.cloneNode(true);
+        list.appendChild(itemClone);
+        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(itemClone);
+        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(itemClone);
+        await waitForImagesToLoad(itemClone);
+        if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(itemClone);
+        if (!pageFits(page)) {
+            list.removeChild(itemClone);
+            page = createPage();
+            // Process math on new page
+            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+            list = cloneElementShell(node);
+            page.appendChild(list);
+            list.appendChild(itemClone);
+            didSplit = true;
+        }
     }
-  }
-  return { page, didSplit };
+    return { page, didSplit };
 }
 
 async function splitChildFlowElement(node, currentPage, createPage) {
-  const children = Array.from(node.childNodes || []);
-  if (!children.length) return { page: currentPage, didSplit: false };
+    const children = Array.from(node.childNodes || []);
+    if (!children.length) return { page: currentPage, didSplit: false };
 
-  let page = currentPage;
-  let shell = cloneElementShell(node);
-  page.appendChild(shell);
-  let didSplit = false;
+    let page = currentPage;
+    let shell = cloneElementShell(node);
+    page.appendChild(shell);
+    let didSplit = false;
 
-  for (const child of children) {
-    const childClone = child.cloneNode(true);
-    shell.appendChild(childClone);
-    if (childClone.nodeType === Node.ELEMENT_NODE) {
-      if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(childClone);
-      if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(childClone);
-      await waitForImagesToLoad(childClone);
-      if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(childClone);
+    for (const child of children) {
+        const childClone = child.cloneNode(true);
+        shell.appendChild(childClone);
+        if (childClone.nodeType === Node.ELEMENT_NODE) {
+            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(childClone);
+            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(childClone);
+            await waitForImagesToLoad(childClone);
+            if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(childClone);
+        }
+        if (!pageFits(page)) {
+            shell.removeChild(childClone);
+            page = createPage();
+            // Process math on new page
+            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
+            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
+            shell = cloneElementShell(node);
+            page.appendChild(shell);
+            shell.appendChild(childClone);
+            didSplit = true;
+        }
     }
-    if (!pageFits(page)) {
-      shell.removeChild(childClone);
-      page = createPage();
-      shell = cloneElementShell(node);
-      page.appendChild(shell);
-      shell.appendChild(childClone);
-      didSplit = true;
-    }
-  }
-  return { page, didSplit };
+    return { page, didSplit };
 }
 
 // ============================================================
