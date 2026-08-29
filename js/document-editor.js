@@ -925,21 +925,18 @@ function getMultiPageEditContext(pageNumbers) {
 }
 
 // ===== EXAM FINALIZATION (IMPROVED) =====
-function buildExamHeaderBlockHTML(subjectGuess) {
+// Compact board-paper style header: title centered, then a single meta line
+// with time on the left and full marks on the right — matches a real
+// photocopied board question paper rather than a fill-in-the-blank cover sheet.
+function buildExamHeaderBlockHTML(subjectGuess, timeText, marksText) {
   const title = (subjectGuess || 'Examination').trim();
+  const time = (timeText || 'Time: ___').trim();
+  const marks = (marksText || 'Full Marks: ___').trim();
   return `<div class="exam-header-block" contenteditable="true">` +
     `<div class="exam-header-title">${escapeHTMLForHeader(title)}</div>` +
-    `<div class="exam-header-subtitle">Full Marks: <span class="blank" style="display:inline-block;min-width:60px;border-bottom:1px solid #64748b;">&nbsp;</span>` +
-    `&nbsp;&nbsp;&nbsp;Time: <span class="blank" style="display:inline-block;min-width:80px;border-bottom:1px solid #64748b;">&nbsp;</span></div>` +
-    `<hr class="exam-header-rule">` +
-    `<div class="exam-header-row">` +
-    `<div class="exam-header-field"><span class="label">Name:</span><span class="blank">&nbsp;</span></div>` +
-    `<div class="exam-header-field"><span class="label">Roll:</span><span class="blank">&nbsp;</span></div>` +
-    `<div class="exam-header-field"><span class="label">Section:</span><span class="blank">&nbsp;</span></div>` +
-    `</div>` +
-    `<div class="exam-header-row">` +
-    `<div class="exam-header-field"><span class="label">Class/Subject:</span><span class="blank">&nbsp;</span></div>` +
-    `<div class="exam-header-field"><span class="label">Date:</span><span class="blank">&nbsp;</span></div>` +
+    `<div class="exam-header-metaline">` +
+    `<span class="exam-header-time">${escapeHTMLForHeader(time)}</span>` +
+    `<span class="exam-header-marks">${escapeHTMLForHeader(marks)}</span>` +
     `</div>` +
     `</div>`;
 }
@@ -960,7 +957,7 @@ function countMCQItemsInHTML(html) {
   return count;
 }
 
-function buildOMRSheetHTML(mcqCount, isBangla = false) {
+function buildOMRSheetHTML(mcqCount, isBangla = false, compact = false) {
   const count = Math.max(1, Math.min(200, mcqCount || 0));
   const labels = isBangla ? ['ক', 'খ', 'গ', 'ঘ'] : ['A', 'B', 'C', 'D'];
   const rows = [];
@@ -972,14 +969,29 @@ function buildOMRSheetHTML(mcqCount, isBangla = false) {
     );
   }
   const langClass = isBangla ? 'bangla-omr' : '';
-  return `<div class="omr-sheet-page ${langClass}">` +
-    `<div class="omr-sheet-title">Answer / OMR</div>` +
+  const gridClass = compact ? 'omr-grid omr-compact' : 'omr-grid';
+  // Compact mode (used when the sheet shares the bottom row with the short-question
+  // list) skips the Name/Roll/Section header — that space is needed for the bubbles.
+  const headerHTML = compact ? '' :
     `<div class="omr-sheet-header">` +
     `<div class="exam-header-field"><span class="label">Name:</span><span class="blank">&nbsp;</span></div>` +
     `<div class="exam-header-field"><span class="label">Roll:</span><span class="blank">&nbsp;</span></div>` +
     `<div class="exam-header-field"><span class="label">Section:</span><span class="blank">&nbsp;</span></div>` +
-    `</div>` +
-    `<div class="omr-grid">${rows.join('')}</div>` +
+    `</div>`;
+  return `<div class="omr-sheet-page ${langClass}${compact ? ' omr-sheet-compact' : ''}">` +
+    `<div class="omr-sheet-title">${isBangla ? 'উত্তরপত্র' : 'Answer / OMR'}</div>` +
+    headerHTML +
+    `<div class="${gridClass}">${rows.join('')}</div>` +
+    `</div>`;
+}
+
+// Combines the AI-authored short-question list with the auto-built OMR sheet
+// into one side-by-side row, mirroring the bottom strip of a real board paper
+// (short questions on the left, the tick/answer grid on the right).
+function buildExamBottomRowHTML(shortListOuterHTML, omrHTML) {
+  return `<div class="exam-bottom-row">` +
+    `<div class="exam-bottom-left">${shortListOuterHTML}</div>` +
+    `<div class="exam-bottom-right">${omrHTML}</div>` +
     `</div>`;
 }
 
@@ -1027,11 +1039,20 @@ function normalizeGeneratedMCQs(rawHtml) {
 function finalizeExamDocumentIfNeeded() {
   try {
     document.body.classList.add('exam-document');
+    // Board-style exam papers are always printed/photocopied black-and-white —
+    // force monochrome rendering (diagrams included) regardless of the toggle.
+    if (!document.body.classList.contains('photocopy-mode')) {
+      document.body.classList.add('photocopy-mode');
+      if (typeof updateModeButtonText === 'function') updateModeButtonText();
+    }
+
     const currentHTML = getAllCanvasHTML();
     if (!currentHTML || currentHTML.includes('Start typing here')) return;
 
     const hasHeader = docContainer.querySelector('.exam-header-block');
     const hasOMR = docContainer.querySelector('.omr-sheet-page');
+    const hasBottomRow = docContainer.querySelector('.exam-bottom-row');
+    const shortList = !hasBottomRow ? docContainer.querySelector('.short-q-list') : null;
     const mcqCount = countMCQItemsInHTML(currentHTML);
 
     let html = normalizeGeneratedMCQs(currentHTML);
@@ -1041,15 +1062,34 @@ function finalizeExamDocumentIfNeeded() {
       html = buildExamHeaderBlockHTML(guessExamTitleFromHTML(currentHTML)) + html;
       changed = true;
     }
+
     if (!hasOMR && mcqCount > 0) {
       const hasBangla = /[\u0980-\u09FF]/.test(tempTextForExamLanguage(html));
-      html = html + buildOMRSheetHTML(mcqCount, hasBangla);
+      if (shortList) {
+        // Pull the AI-authored short-question list out of the flow and rebuild
+        // it side-by-side with a compact OMR grid, instead of stacking them.
+        const shortListHTML = shortList.outerHTML;
+        const omrHTML = buildOMRSheetHTML(mcqCount, hasBangla, true);
+        const bottomRowHTML = buildExamBottomRowHTML(shortListHTML, omrHTML);
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const liveShortList = temp.querySelector('.short-q-list');
+        if (liveShortList) {
+          liveShortList.outerHTML = bottomRowHTML;
+          html = temp.innerHTML;
+        } else {
+          html = html + bottomRowHTML;
+        }
+      } else {
+        html = html + buildOMRSheetHTML(mcqCount, hasBangla);
+      }
       changed = true;
     }
 
     if (changed) {
       setDocumentHTMLAndPaginate(html, false);
       docContainer.scrollTop = 0;
+      if (typeof applyMonochromeDocumentStyles === 'function') applyMonochromeDocumentStyles();
     }
   } catch (e) {
     console.warn('Exam finalization skipped:', e);
