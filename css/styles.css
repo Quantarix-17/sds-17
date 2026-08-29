@@ -1677,20 +1677,20 @@ body.exam-document .doc-page-canvas {
   text-align: left;
 }
 
-/* ---- Exam Header Block ---- */
+/* ---- Exam Header Block (compact board-paper style) ---- */
 .exam-header-block {
   border: 0;
   border-bottom: 1.5px solid #111;
   border-radius: 0;
-  padding: 0 0 8px;
-  margin: 0 0 10px;
+  padding: 0 0 6px;
+  margin: 0 0 8px;
   font-family: 'Times New Roman', Times, serif;
   page-break-inside: avoid;
   break-inside: avoid;
 }
 .exam-header-title {
   text-align: center;
-  font-size: 17pt;
+  font-size: 15pt;
   font-weight: 800;
   color: #111;
   margin: 0 0 2px;
@@ -1707,6 +1707,17 @@ body.exam-document .doc-page-canvas {
   border: none;
   border-top: 1px solid #111;
   margin: 0 0 6px;
+}
+/* Single compact meta line: time on the left, full marks on the right —
+   matches the top strip of a real board question paper. */
+.exam-header-metaline {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10.5pt;
+  font-weight: 700;
+  color: #111;
+  margin-top: 2px;
 }
 .exam-header-row {
   display: grid;
@@ -1737,24 +1748,38 @@ body.exam-document .doc-page-canvas {
   display: inline-block;
 }
 
-/* ---- MCQ / Quiz Container (Two-Column Layout) ---- */
+/* ---- Section title (e.g. "সৃজনশীল প্রশ্ন") between exam sections ---- */
+.exam-section-title {
+  font-weight: 800;
+  font-size: 11.5pt;
+  color: #111;
+  text-align: center;
+  margin: 10px 0 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #111;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* ---- MCQ / Quiz Container (Photocopy-Style Dense Three-Column Layout) ---- */
 .quiz-container {
   counter-reset: mcq-item;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-family: 'Times New Roman', Times, serif;
-  font-size: 11.2pt;
-  line-height: 1.44;
+  font-size: 8.6pt;
+  line-height: 1.28;
   width: 100%;
 }
 
-/* Two-column layout for exam documents */
+/* Three narrow columns for exam documents — matches a photocopied board paper,
+   where each column can hold roughly 25-30 compact questions. */
 body.exam-document .quiz-container {
-  column-count: 2;
-  column-gap: 28px;
+  column-count: 3;
+  column-gap: 12px;
   column-fill: auto;
   width: 100%;
-  font-size: 11.2pt;
-  line-height: 1.44;
+  font-size: 8.6pt;
+  line-height: 1.28;
 }
 
 /* Each question item */
@@ -1764,8 +1789,8 @@ body.exam-document .quiz-container {
   break-inside: avoid;
   page-break-inside: avoid;
   -webkit-column-break-inside: avoid;
-  margin: 0 0 9px;
-  padding: 0 0 5px;
+  margin: 0 0 4px;
+  padding: 0;
   border: 0;
 }
 
@@ -1773,8 +1798,9 @@ body.exam-document .quiz-container {
 .quiz-question {
   font-weight: 700;
   color: #111;
-  margin: 0 0 3px;
-  line-height: 1.44;
+  margin: 0;
+  line-height: 1.28;
+  display: inline;
 }
 .quiz-question::before {
   content: counter(mcq-item) '. ';
@@ -1782,85 +1808,164 @@ body.exam-document .quiz-container {
   font-weight: 700;
 }
 
-/* Options grid — two columns for options only */
+/* Options — natural inline flow so short options share a line and long
+   options wrap to their own, exactly like a real dense board-paper column. */
 .quiz-options {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1px 18px;
-  margin: 0 0 0 18px;
+  display: block;
+  margin: 0;
   padding: 0;
-  font-size: 10.6pt;
+  font-size: 8.6pt;
   color: #111;
 }
 
 /* Individual option */
 .quiz-option {
-  position: relative;
-  min-width: 0;
-  padding: 0 2px 0 23px;
+  display: inline;
+  padding: 0;
   border: 0;
-  border-radius: 0;
   background: transparent;
   word-break: normal;
   overflow-wrap: anywhere;
-  line-height: 1.36;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  line-height: 1.28;
+  margin-right: 6px;
+  white-space: nowrap;
 }
 .quiz-option::before {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 19px;
   font-weight: 700;
   color: #111;
+  margin-right: 1px;
 }
-.quiz-option:nth-child(1)::before { content: '(A)'; }
-.quiz-option:nth-child(2)::before { content: '(B)'; }
-.quiz-option:nth-child(3)::before { content: '(C)'; }
-.quiz-option:nth-child(4)::before { content: '(D)'; }
+.quiz-option:nth-child(1)::before { content: '(A) '; }
+.quiz-option:nth-child(2)::before { content: '(B) '; }
+.quiz-option:nth-child(3)::before { content: '(C) '; }
+.quiz-option:nth-child(4)::before { content: '(D) '; }
 
 /* Bengali option labels */
-.quiz-item.bangla-question .quiz-option:nth-child(1)::before { content: 'ক)'; }
-.quiz-item.bangla-question .quiz-option:nth-child(2)::before { content: 'খ)'; }
-.quiz-item.bangla-question .quiz-option:nth-child(3)::before { content: 'গ)'; }
-.quiz-item.bangla-question .quiz-option:nth-child(4)::before { content: 'ঘ)'; }
+.quiz-item.bangla-question .quiz-option:nth-child(1)::before { content: 'ক) '; }
+.quiz-item.bangla-question .quiz-option:nth-child(2)::before { content: 'খ) '; }
+.quiz-item.bangla-question .quiz-option:nth-child(3)::before { content: 'গ) '; }
+.quiz-item.bangla-question .quiz-option:nth-child(4)::before { content: 'ঘ) '; }
 
-/* Answer Key */
+/* Answer Key — plain printed strip, not a highlighted callout box */
 .quiz-answer-key {
   column-span: all;
-  margin-top: 18px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  font-size: 9.5pt;
+  margin-top: 10px;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #111;
+  border-radius: 0;
+  font-size: 8.2pt;
   break-inside: avoid;
   page-break-inside: avoid;
 }
 .quiz-answer-title {
   font-weight: 800;
-  font-size: 11pt;
-  color: #1e3a8a;
-  margin-bottom: 8px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid #cbd5e1;
+  font-size: 9.5pt;
+  color: #111;
+  margin-bottom: 5px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #111;
 }
 .quiz-answer-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px 8px;
-  line-height: 1.3;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 2px 6px;
+  line-height: 1.25;
 }
 .quiz-answer-item {
   white-space: nowrap;
 }
 .quiz-explanation {
-  margin-top: 4px;
-  padding-left: 8px;
-  border-left: 2px solid #999;
-  color: #333;
-  font-size: 9.1pt;
+  margin-top: 3px;
+  padding-left: 6px;
+  border-left: 2px solid #333;
+  color: #111;
+  font-size: 8pt;
+}
+
+/* ---- Creative Questions (সৃজনশীল), Three Columns ---- */
+.cq-container {
+  counter-reset: cq-item;
+  margin: 4px 0 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 8.6pt;
+  line-height: 1.3;
+  width: 100%;
+}
+body.exam-document .cq-container {
+  column-count: 3;
+  column-gap: 12px;
+  column-fill: auto;
+  width: 100%;
+}
+.cq-item {
+  counter-increment: cq-item;
+  display: block;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin: 0 0 8px;
+  padding: 0 0 4px;
+  border-bottom: 1px dashed #666;
+}
+.cq-item::before {
+  content: counter(cq-item) '. ';
+  font-weight: 700;
+  color: #111;
+}
+.cq-stem {
+  color: #111;
+  font-style: italic;
+  margin: 2px 0 3px;
+  line-height: 1.3;
+}
+.cq-subquestions {
+  margin: 0;
+  padding: 0;
+}
+.cq-subitem {
+  display: block;
+  margin: 0 0 2px;
+  line-height: 1.28;
+  color: #111;
+}
+.cq-marks {
+  display: inline-block;
+  min-width: 12px;
+  font-weight: 700;
+  margin-right: 3px;
+}
+
+/* ---- Bottom strip: short questions (left) + answer/OMR sheet (right) ---- */
+.exam-bottom-row {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 0 16px;
+  align-items: start;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #111;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.exam-bottom-left,
+.exam-bottom-right {
+  min-width: 0;
+}
+.short-q-list {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 8.6pt;
+  line-height: 1.35;
+  counter-reset: short-q-item;
+}
+.short-q-item {
+  counter-increment: short-q-item;
+  margin: 0 0 4px;
+  color: #111;
+}
+.short-q-item::before {
+  content: counter(short-q-item) '. ';
+  font-weight: 700;
 }
 
 /* ---- OMR Sheet ---- */
@@ -1872,6 +1977,13 @@ body.exam-document .quiz-container {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+/* Compact variant: sits inside .exam-bottom-row next to the short-question
+   list, so it needs no top rule/margin of its own and a smaller title. */
+.omr-sheet-page.omr-sheet-compact {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
 .omr-sheet-title {
   text-align: center;
   font-size: 14pt;
@@ -1879,6 +1991,12 @@ body.exam-document .quiz-container {
   color: #1e3a8a;
   letter-spacing: 0.06em;
   margin: 0 0 5px;
+}
+.omr-sheet-compact .omr-sheet-title {
+  font-size: 9.5pt;
+  letter-spacing: 0.03em;
+  margin: 0 0 3px;
+  color: #111;
 }
 .omr-sheet-header {
   border: 2px solid #16233f;
@@ -1898,6 +2016,13 @@ body.exam-document .quiz-container {
   border-radius: 0;
   padding: 5px 7px;
 }
+/* Compact grid: fewer columns since it only occupies the right half of the
+   bottom strip alongside the short-question list. */
+.omr-grid.omr-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px 5px;
+  padding: 4px 5px;
+}
 .omr-row {
   display: flex;
   align-items: center;
@@ -1907,11 +2032,17 @@ body.exam-document .quiz-container {
   font-size: 8pt;
   line-height: 1;
 }
+.omr-compact .omr-row {
+  font-size: 6.6pt;
+}
 .omr-qnum {
   width: 22px;
   font-weight: 700;
   color: #111;
   flex-shrink: 0;
+}
+.omr-compact .omr-qnum {
+  width: 16px;
 }
 .omr-bubble {
   width: 12px;
@@ -1925,6 +2056,11 @@ body.exam-document .quiz-container {
   font-weight: 700;
   color: #111;
   flex-shrink: 0;
+}
+.omr-compact .omr-bubble {
+  width: 10px;
+  height: 10px;
+  font-size: 5.4pt;
 }
 
 /* Bangla OMR labels */
@@ -1960,32 +2096,43 @@ body.exam-document .quiz-container {
   border-color: #000 !important;
   color: #000 !important;
 }
+.photocopy-mode .cq-item,
+.photocopy-mode .cq-stem,
+.photocopy-mode .cq-subitem,
+.photocopy-mode .cq-marks,
+.photocopy-mode .exam-section-title,
+.photocopy-mode .exam-header-metaline,
+.photocopy-mode .short-q-item {
+  color: #000 !important;
+  border-color: #000 !important;
+}
 
-/* ---- Responsive: single column on mobile ---- */
+/* ---- Responsive: fewer columns on small screens ---- */
 @media (max-width: 850px) {
-  body.exam-document .quiz-container {
+  body.exam-document .quiz-container,
+  body.exam-document .cq-container {
     column-count: 1 !important;
-  }
-  .quiz-options {
-    grid-template-columns: 1fr 1fr !important;
   }
   .omr-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
+  .exam-bottom-row {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 @media (max-width: 420px) {
-  .quiz-options {
-    grid-template-columns: 1fr !important;
-  }
   .omr-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
-/* ---- Hide MCQ by default (only show when exam class is active) ---- */
+/* ---- Hide exam-only blocks by default (only show when exam class is active) ---- */
 body:not(.exam-document) .quiz-container,
 body:not(.exam-document) .exam-header-block,
+body:not(.exam-document) .exam-section-title,
+body:not(.exam-document) .cq-container,
+body:not(.exam-document) .exam-bottom-row,
 body:not(.exam-document) .omr-sheet-page {
   display: none !important;
 }
