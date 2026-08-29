@@ -1562,13 +1562,16 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
   }
 }
 
-// ===== GENERATE DEFAULT PDF DIRECT MODE (UPDATED: MCQ instruction) =====
+// ===== GENERATE DEFAULT PDF DIRECT MODE (UPDATED: Enhanced MCQ instruction) =====
 async function generateDefaultPDFDirectMode(promptText, fileContextString, isMonochromeMode, isEmptyCanvas, isReplaceIntent, modelsUsedSet, intentPayload) {
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const existingHTML = (!isEmptyCanvas && !isReplaceIntent) ? (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '') : '';
   const currentText = existingHTML ? (typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : '') : '';
   const requestSessionId = APP_STATE.activeSessionId;
   const activeCfg = _generationLockedModelConfig || undefined;
+
+  // Detect MCQ from prompt or intent
+  const isMcqRequest = intentPayload?.hasMcq || intentPayload?.contentTypes?.includes('mcq') || /(MCQ|mcq|টিক|multiple choice|বহুনির্বাচনী|প্রশ্ন|উত্তর|exam|পরীক্ষা)/i.test(promptText);
 
   const systemPrompt =
     `You are the dedicated DEFAULT PDF document generator for AI PDF Studio.\n` +
@@ -1577,16 +1580,21 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: null, language: outputLanguage, sectionMode: false }) : ''}\n` +
     `DEFAULT DIRECT RULES: create the complete requested document in one continuous generation flow. Follow the user's requested scope, depth and detail. There is no fixed page target. Do not intentionally compress a detailed request, and do not pad a simple request. Use natural headings, definitions, explanations, formulas, worked examples, tables and useful visuals where they materially improve the document.\n` +
-    `IMPORTANT: If the user asks for MCQ questions, "tick" questions, or exam questions, generate them using the professional MCQ format:\n` +
-    `- Wrap ALL questions in one <div class="quiz-container">.\n` +
-    `- Each question MUST be one <div class="quiz-item"> containing exactly one <div class="quiz-question"> and one <div class="quiz-options">.\n` +
-    `- Each <div class="quiz-options"> MUST contain exactly FOUR <div class="quiz-option"> choices (A, B, C, D).\n` +
-    `- After all questions, include one <div class="quiz-answer-key"><div class="quiz-answer-title">Answer Key</div><div class="quiz-answer-grid">...</div></div>.\n` +
-    `- The Answer Key must contain exactly one <div class="quiz-answer-item"> per question with the correct option letter.\n` +
-    `- Use the exam-document class on body for two-column layout.\n` +
-    `- For Bengali questions, use quiz-item.bangla-question with ক, খ, গ, ঘ labels.\n` +
-    `If the user did NOT ask for MCQ/exam questions, generate a regular study note/document without any MCQ.\n` +
-    `OUTPUT SAFETY: the result must contain substantial visible explanatory content, not just a title or outline. Use semantic HTML suitable for the existing A4 pagination engine.\n`;
+    (isMcqRequest ? `
+    === MCQ GENERATION MODE ACTIVE ===
+    The user has requested MCQ ("tick") questions. You MUST generate the questions as a document, not just answers.
+    - Create a document with a title, then a <div class="quiz-container">.
+    - Inside quiz-container, create exactly 20 <div class="quiz-item"> elements (or the number requested).
+    - Each quiz-item must contain a <div class="quiz-question"> (the question stem) and a <div class="quiz-options">.
+    - The quiz-options must contain exactly four <div class="quiz-option"> elements for options (A), (B), (C), (D).
+    - After all questions, include a <div class="quiz-answer-key"> with the correct answers.
+    - If the user asks for explanations ("বিশ্লেষণ"), include a separate section after the answer key with explanations for each answer.
+    - Do NOT produce only answers without the questions. The document must contain the questions first.
+    - Do NOT output any conversational text. Only the document HTML.
+    ` : `
+    IMPORTANT: If the user did NOT ask for MCQ/exam questions, generate a regular study note/document without any MCQ.
+    `) +
+    `OUTPUT SAFETY: the result must contain substantial visible explanatory content, not just a title or outline. Use semantic HTML suitable for the existing A4 pagination engine.`;
 
   const userPrompt =
     `USER REQUEST:\n${promptText}\n\n` +
@@ -1635,7 +1643,25 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     if (generated && generated.startsWith('{') && generated.includes('"action"')) {
       const parsedJson = safeParseAIJson(generated, null);
       if (parsedJson && parsedJson.action === 'chat_reply' && parsedJson.message) {
-        generated = convertTextToDocumentHTML(parsedJson.message);
+        // If AI returned chat_reply, try to convert the message to HTML, but if it's just text, we'll force re-generation with stronger instruction.
+        // For MCQ, we want to force a full document, so we'll retry.
+        if (isMcqRequest) {
+          // Retry with an even stronger instruction
+          const retryPrompt = `You MUST generate a complete document containing the requested MCQ questions. Do not just provide answers. Return HTML with quiz-container.`;
+          const retryResult = await callAIAPI([{ role: 'system', content: systemPrompt + `\nDO NOT use chat_reply. Always output document HTML.` }, { role: 'user', content: retryPrompt + '\n\n' + userPrompt }], {
+            forceJson: false,
+            modelsUsedSet,
+            modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg,
+            maxTokens: undefined
+          });
+          if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
+          const retryHTML = extractHTML(retryResult);
+          if (usableTextLength(retryHTML) > usableTextLength(generated)) {
+            generated = retryHTML;
+          }
+        } else {
+          generated = convertTextToDocumentHTML(parsedJson.message);
+        }
       }
     }
 
@@ -2168,7 +2194,7 @@ async function handleRefineAction(promptText, intentPayload, pageContext, models
 }
 
 // ============================================================
-// MAIN CHAT FUNCTION (UPDATED with refine pipelines)
+// MAIN CHAT FUNCTION (UPDATED with MCQ detection from prompt)
 // ============================================================
 
 async function sendChatPromptToAI() {
@@ -2180,6 +2206,26 @@ async function sendChatPromptToAI() {
 
     let promptText = typeof parseAndStripInlineCommandTokens === 'function' ? parseAndStripInlineCommandTokens(rawInputValue).trim() : rawInputValue.trim();
     if (!promptText) promptText = APP_STATE.selectedCommands.length > 0 ? 'Apply the selected @ command settings.' : '';
+
+    // --- Auto-detect MCQ from prompt text ---
+    const mcqKeywords = /(MCQ|mcq|টিক|multiple choice|বহুনির্বাচনী|প্রশ্ন|উত্তর|exam|পরীক্ষা)/i;
+    if (mcqKeywords.test(promptText) && !APP_STATE.selectedCommands.some(c => c.id === 'mcq')) {
+      const mcqCmd = getAtCommandById('mcq');
+      if (mcqCmd) {
+        // Extract number from prompt (like ২০, 20)
+        let count = 20;
+        const numMatch = promptText.match(/(\d+|২০|৩০|৪০|৫০|১০)/);
+        if (numMatch) {
+          const num = parseInt(numMatch[1], 10);
+          if (!isNaN(num) && num > 0) count = num;
+        }
+        attemptAddAtCommand(mcqCmd, String(count));
+        // Ensure exam and create_pdf are added
+        ensureCommandDependencies(mcqCmd, { silent: true });
+        // Rebuild intentPayload
+        intentPayload = buildIntentPayload();
+      }
+    }
 
     let intentPayload = typeof buildIntentPayload === 'function' ? buildIntentPayload() : null;
     if (!intentPayload) {
