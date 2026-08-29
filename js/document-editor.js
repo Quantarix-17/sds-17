@@ -1009,6 +1009,32 @@ function tempTextForExamLanguage(html) {
   return temp.textContent || '';
 }
 
+// Defensive cleanup: the AI is instructed never to write its own question
+// numbers/letters (the CSS auto-numbers everything), but strip any it adds
+// anyway so we never end up with doubled numbering like "1.১".
+function stripLeadingAutoNumberFromText(text) {
+  return String(text || '').replace(
+    /^\s*(?:[০-৯0-9]{1,3}\s*[.।:)]|[কখগঘ]\s*[.)]|[a-dA-D]\s*[.)])\s*/,
+    ''
+  );
+}
+
+function stripLeadingAutoNumberFromElement(el) {
+  if (!el) return;
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (!node.textContent.replace(/^\s+/, '')) continue;
+      const stripped = stripLeadingAutoNumberFromText(node.textContent);
+      if (stripped !== node.textContent) node.textContent = stripped;
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      stripLeadingAutoNumberFromElement(node);
+      return;
+    }
+  }
+}
+
 function normalizeGeneratedMCQs(rawHtml) {
   if (!rawHtml || !/quiz-container/i.test(rawHtml)) return rawHtml;
   const temp = document.createElement('div');
@@ -1019,10 +1045,12 @@ function normalizeGeneratedMCQs(rawHtml) {
       const q = item.querySelector(':scope > .quiz-question');
       const wrap = item.querySelector(':scope > .quiz-options');
       if (!q || !wrap) return;
+      stripLeadingAutoNumberFromElement(q);
       const qText = q.textContent || '';
       if (/[\u0980-\u09FF]/.test(qText)) item.classList.add('bangla-question');
       else item.classList.remove('bangla-question');
       const opts = Array.from(wrap.children).filter(el => el.classList && el.classList.contains('quiz-option'));
+      opts.forEach(stripLeadingAutoNumberFromElement);
       opts.slice(4).forEach(el => el.remove());
     });
     let key = container.querySelector(':scope > .quiz-answer-key');
@@ -1033,6 +1061,86 @@ function normalizeGeneratedMCQs(rawHtml) {
       container.appendChild(key);
     }
   });
+  return temp.innerHTML;
+}
+
+// Same defensive cleanup as normalizeGeneratedMCQs, but for the creative-question
+// (cq-container) and short-question (short-q-list) sections: strip any number/letter
+// the AI wrote on its own, and flag Bangla sections so CSS can number them with
+// Bengali digits (১, ২, ৩…) instead of Western ones.
+function normalizeGeneratedExamSections(rawHtml) {
+  if (!rawHtml || !(/cq-container/i.test(rawHtml) || /short-q-list/i.test(rawHtml))) return rawHtml;
+  const temp = document.createElement('div');
+  temp.innerHTML = rawHtml;
+
+  temp.querySelectorAll('.cq-container').forEach(container => {
+    const items = Array.from(container.children).filter(el => el.classList && el.classList.contains('cq-item'));
+    let hasBangla = false;
+    items.forEach((item) => {
+      const stem = item.querySelector(':scope > .cq-stem');
+      if (stem) stripLeadingAutoNumberFromElement(stem);
+      const subitems = item.querySelectorAll(':scope > .cq-subquestions > .cq-subitem');
+      subitems.forEach((sub) => {
+        const marks = sub.querySelector(':scope > .cq-marks');
+        for (const node of Array.from(sub.childNodes)) {
+          if (node === marks) continue;
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.replace(/^\s+/, '')) {
+            const stripped = stripLeadingAutoNumberFromText(node.textContent);
+            if (stripped !== node.textContent) node.textContent = stripped;
+            break;
+          }
+        }
+      });
+      if (/[\u0980-\u09FF]/.test(item.textContent || '')) hasBangla = true;
+    });
+    container.classList.toggle('bangla-mode', hasBangla);
+  });
+
+  temp.querySelectorAll('.short-q-list').forEach(list => {
+    const items = Array.from(list.children).filter(el => el.classList && el.classList.contains('short-q-item'));
+    items.forEach(stripLeadingAutoNumberFromElement);
+    const hasBangla = /[\u0980-\u09FF]/.test(list.textContent || '');
+    list.classList.toggle('bangla-mode', hasBangla);
+  });
+
+  return temp.innerHTML;
+}
+
+// Moves the Answer Key to the very end of the document, on its own fresh
+// page (a manual-page-break the pagination engine already understands),
+// with a small centered title repeated above it — regardless of whether the
+// AI nested the key inside quiz-container or already placed it separately.
+function enforceAnswerKeyOwnPage(html) {
+  if (!html || !/quiz-answer-key/i.test(html)) return html;
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const key = temp.querySelector('.quiz-answer-key');
+  if (!key) return html;
+
+  // Already the last top-level node, directly preceded by a manual-page-break: nothing to do.
+  const prevSibling = key.previousElementSibling;
+  const isTopLevel = key.parentNode === temp;
+  if (isTopLevel && !key.nextElementSibling && prevSibling && prevSibling.classList.contains('manual-page-break')) {
+    return html;
+  }
+
+  key.parentNode.removeChild(key);
+
+  const titleEl = temp.querySelector('.exam-header-title');
+  const titleText = titleEl ? titleEl.textContent.trim() : '';
+
+  const breakDiv = document.createElement('div');
+  breakDiv.className = 'manual-page-break';
+  temp.appendChild(breakDiv);
+
+  if (titleText) {
+    const repeatedHeader = document.createElement('div');
+    repeatedHeader.className = 'exam-header-block exam-answer-page-header';
+    repeatedHeader.innerHTML = `<div class="exam-header-title">${escapeHTMLForHeader(titleText)}</div>`;
+    temp.appendChild(repeatedHeader);
+  }
+
+  temp.appendChild(key);
   return temp.innerHTML;
 }
 
@@ -1051,11 +1159,10 @@ function finalizeExamDocumentIfNeeded() {
 
     const hasHeader = docContainer.querySelector('.exam-header-block');
     const hasOMR = docContainer.querySelector('.omr-sheet-page');
-    const hasBottomRow = docContainer.querySelector('.exam-bottom-row');
-    const shortList = !hasBottomRow ? docContainer.querySelector('.short-q-list') : null;
     const mcqCount = countMCQItemsInHTML(currentHTML);
 
     let html = normalizeGeneratedMCQs(currentHTML);
+    html = normalizeGeneratedExamSections(html);
     let changed = html !== currentHTML;
 
     if (!hasHeader) {
@@ -1065,26 +1172,27 @@ function finalizeExamDocumentIfNeeded() {
 
     if (!hasOMR && mcqCount > 0) {
       const hasBangla = /[\u0980-\u09FF]/.test(tempTextForExamLanguage(html));
-      if (shortList) {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      const liveShortList = temp.querySelector('.short-q-list');
+      if (liveShortList) {
         // Pull the AI-authored short-question list out of the flow and rebuild
         // it side-by-side with a compact OMR grid, instead of stacking them.
-        const shortListHTML = shortList.outerHTML;
+        const shortListHTML = liveShortList.outerHTML;
         const omrHTML = buildOMRSheetHTML(mcqCount, hasBangla, true);
-        const bottomRowHTML = buildExamBottomRowHTML(shortListHTML, omrHTML);
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
-        const liveShortList = temp.querySelector('.short-q-list');
-        if (liveShortList) {
-          liveShortList.outerHTML = bottomRowHTML;
-          html = temp.innerHTML;
-        } else {
-          html = html + bottomRowHTML;
-        }
+        liveShortList.outerHTML = buildExamBottomRowHTML(shortListHTML, omrHTML);
+        html = temp.innerHTML;
       } else {
         html = html + buildOMRSheetHTML(mcqCount, hasBangla);
       }
       changed = true;
     }
+
+    // Answer Key always starts on its own fresh page, after the MCQ/CQ/short
+    // question strip above it.
+    const beforeAnswerKeyFix = html;
+    html = enforceAnswerKeyOwnPage(html);
+    if (html !== beforeAnswerKeyFix) changed = true;
 
     if (changed) {
       setDocumentHTMLAndPaginate(html, false);
