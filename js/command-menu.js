@@ -103,7 +103,7 @@ function isDocumentOperationIntent(id) {
   return ['edit', 'refine', 'refine_equation', 'redesign_diagram', 'beautify', 'refine_pagination'].includes(id);
 }
 
-// ===== DEPENDENCY MANAGEMENT (UPDATED: auto-add @Exam & @Create PDF for MCQ) =====
+// ===== DEPENDENCY MANAGEMENT (UPDATED: allow @exam + @create_pdf coexistence) =====
 function ensureCommandDependencies(cmd, { silent = false } = {}) {
   if (!cmd) return false;
   if (!window.APP_STATE) return false;
@@ -123,7 +123,7 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
     return false;
   }
 
-  // FIX: If user selects MCQ/CQ/Short Question, auto-add @Exam and @Create PDF
+  // --- UPDATED: For MCQ/CQ/Short Question, always ensure @exam is present ---
   if (cmd.id === 'mcq' || cmd.id === 'cq' || cmd.id === 'short_question') {
     if (!hasExam) {
       const examCmd = getAtCommandById('exam');
@@ -135,6 +135,7 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
         if (!silent) displayToastNotification('🔍 @Exam auto-enabled for MCQ generation');
       }
     }
+    // If @create_pdf is not present, add it automatically as well (if not already)
     if (!hasCreatePdf) {
       const createPdfCmd = getAtCommandById('create_pdf');
       if (createPdfCmd) {
@@ -158,12 +159,10 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
     }
   }
 
-  if (cmd.id === 'exam') {
-    window.APP_STATE.selectedCommands = window.APP_STATE.selectedCommands.filter(c => c.id !== 'create_pdf');
-  }
-  if (cmd.id === 'create_pdf') {
-    window.APP_STATE.selectedCommands = window.APP_STATE.selectedCommands.filter(c => c.id !== 'exam');
-  }
+  // --- REMOVED mutual exclusivity between @exam and @create_pdf ---
+  // Previously: if (cmd.id === 'exam') { window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'create_pdf'); }
+  // and if (cmd.id === 'create_pdf') { window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'exam'); }
+  // Now we allow both to coexist.
 
   if (cmd.requiresDocument && !hasDocumentContentForAtCommands()) {
     if (!silent) showAtCommandToast(`@${cmd.label} requires an existing document first.`);
@@ -172,10 +171,6 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
 
   const parent = getCommandAutoParent(cmd);
   if (parent && !sel.some(c => c.id === parent.id)) {
-    if (parent.id === 'create_pdf' && hasExam) {
-      if (!silent) showAtCommandToast(`@${cmd.label} cannot be used with @Exam.`);
-      return false;
-    }
     window.APP_STATE.selectedCommands.push({
       id: parent.id, category: parent.category, label: parent.label,
       icon: parent.icon, param: null, implicit: true
@@ -215,8 +210,7 @@ function getAtCommandDisabledReason(cmd) {
     if (primary && primary.id !== cmd.id) {
       return `Remove @${primary.label} first — only one primary action is allowed`;
     }
-    if (cmd.id === 'create_pdf' && hasExam) return 'Remove @Exam first';
-    if (cmd.id === 'exam' && hasCreatePdf) return 'Remove @Create PDF first';
+    // Allow both @exam and @create_pdf to coexist, so no conflict here.
     if (cmd.requiresDocument && !hasExistingDocument) return 'Create/open a document first';
   }
 
@@ -245,7 +239,9 @@ function getAtCommandDisabledReason(cmd) {
   }
 
   if (cmd.category === 'content') {
-    return hasExam ? null : 'Select @Exam first';
+    // Allow MCQ only if @exam is selected (which we auto-add) or if @create_pdf is selected? 
+    // We'll keep the exam requirement, but since we auto-add exam, it will be enabled.
+    return hasExam ? null : 'Select @Exam first (auto-enabled when you choose MCQ)';
   }
 
   if (cmd.id === 'exercise' || cmd.category === 'practice') {
@@ -411,10 +407,7 @@ function attemptAddAtCommand(cmd, param, options = {}) {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== existingPrimary.id);
       sel = window.APP_STATE.selectedCommands;
     }
-    if (cmd.id === 'exam') {
-      window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'create_pdf');
-      sel = window.APP_STATE.selectedCommands;
-    }
+    // REMOVED: no filter that removes create_pdf when exam is added
   }
 
   if (cmd.category !== 'content') {
@@ -458,10 +451,8 @@ function pruneDependentAtCommandSelections() {
     sel = [chat];
   }
 
-  if (sel.some(c => c.id === 'exam') && sel.some(c => c.id === 'create_pdf')) {
-    sel = sel.filter(c => c.id !== 'create_pdf');
-    removed.push({ id: 'create_pdf', label: 'Create PDF' });
-  }
+  // REMOVED: mutual exclusivity between exam and create_pdf
+  // Now they can coexist.
 
   const effectiveExam = sel.some(c => c.id === 'exam');
   const effectiveCreatePdf = sel.some(c => c.id === 'create_pdf');
@@ -489,11 +480,11 @@ function pruneDependentAtCommandSelections() {
     sel = sel.filter(c => c.id !== 'exercise');
   }
 
-  if (!effectiveCreatePdf) {
+  // If neither exam nor create_pdf is present, remove length, canvas, language
+  if (!effectiveCreatePdf && !effectiveExam) {
     const invalid = sel.filter(c => c.category === 'length' || c.id === 'canvas' || c.id === 'language');
-    if (invalid.length && !effectiveExam) removed.push(...invalid);
-    sel = effectiveExam ? sel.filter(c => c.category !== 'length' && c.id !== 'canvas') :
-                         sel.filter(c => c.category !== 'length' && c.id !== 'canvas' && c.id !== 'language');
+    if (invalid.length) removed.push(...invalid);
+    sel = sel.filter(c => c.category !== 'length' && c.id !== 'canvas' && c.id !== 'language');
   }
 
   const docOp = sel.find(c => c.category === 'intent' && isDocumentOperationIntent(c.id));
@@ -820,7 +811,7 @@ function parseAndStripInlineCommandTokens(text) {
   return result;
 }
 
-// ===== BUILD INTENT PAYLOAD (UPDATED: better MCQ detection) =====
+// ===== BUILD INTENT PAYLOAD =====
 function buildIntentPayload() {
   if (!window.APP_STATE) return null;
   const sel = window.APP_STATE.selectedCommands;
@@ -834,7 +825,6 @@ function buildIntentPayload() {
   const visualCmd = findCat('visual');
   const contentCmds = sel.filter(c => c.category === 'content' || c.category === 'practice');
 
-  // FIX: Auto-detect MCQ from content commands
   const hasMcq = contentCmds.some(c => c.id === 'mcq');
   const hasCq = contentCmds.some(c => c.id === 'cq');
   const hasShort = contentCmds.some(c => c.id === 'short_question');
@@ -855,6 +845,9 @@ function buildIntentPayload() {
     }
   }
 
+  // Determine if the intent is exam-related: if @exam is present or any content command is present
+  const isExamMode = sel.some(c => c.id === 'exam') || hasMcq || hasCq || hasShort;
+
   return {
     intent: intentCmd.id,
     length: lengthCmd ? lengthCmd.id : null,
@@ -868,11 +861,11 @@ function buildIntentPayload() {
     refinePaginationPage: (intentCmd.id === 'refine_pagination' && intentCmd.param) ? parseInt(intentCmd.param, 10) : null,
     editPages: (intentCmd.id === 'edit' && intentCmd.param) ?
       intentCmd.param.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0) : null,
-    // FIX: Auto-detect if this is an MCQ request even without explicit @mcq
     hasMcq: hasMcq,
     hasCq: hasCq,
     hasShort: hasShort,
-    hasExercise: hasExercise
+    hasExercise: hasExercise,
+    isExamMode: isExamMode
   };
 }
 
@@ -944,9 +937,8 @@ function buildAtCommandInstructionText(intentPayload) {
     parts.push(`CONTENT TYPES TO INCLUDE: ${contentParts.join(', ')}.`);
   }
 
-  // FIX: If user asked for MCQ but no @mcq selected, auto-detect from prompt
-  if (intentPayload.hasMcq || intentPayload.contentTypes?.includes('mcq')) {
-    parts.push('MCQ MODE ACTIVE: Generate professional MCQ questions using the quiz-container format.');
+  if (intentPayload.isExamMode || intentPayload.hasMcq) {
+    parts.push('MCQ/EXAM MODE ACTIVE: Generate professional MCQ questions using the quiz-container format.');
   }
 
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
