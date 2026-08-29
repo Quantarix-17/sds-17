@@ -68,6 +68,7 @@ const KNOWN_LATEX_COMMANDS = new Set([
     'quad','qquad','displaystyle','textstyle','scriptstyle','scriptscriptstyle',
     'cdots','ldots','vdots','ddots','dots',
     'pmod','bmod','not',
+    'langle','rangle','lceil','rceil','lfloor','rfloor','vert','Vert','mid',
     'ext','extker','extrange'
 ]);
 
@@ -305,11 +306,21 @@ function processMathEquationsInContainer(container) {
 function repairVisibleEscapeSequencesInText(text) {
     let value = String(text || '');
     // First, handle actual escape sequences that are not part of LaTeX commands.
-    value = value.replace(/\\([nrt])/g, (full, letter) => {
-        if (letter === 'n') return '\n';
-        if (letter === 'r') return '\r';
-        if (letter === 't') return '\t';
-        return full;
+    // BUG THIS FIXES: a naive /\\([nrt])/ replace also matches the first letter of any
+    // LaTeX command starting with n/r/t (\text, \tau, \tan, \top, \tilde, \nabla, \neg,
+    // \rangle, \rightarrow, ...), turning "\text{Area}" into "<TAB>ext{Area}" – which is
+    // why equations were showing a stray "ext" instead of rendering.
+    // Fix: capture any run of letters right after the n/r/t, and only treat it as a
+    // plain escape sequence if that whole run is NOT a recognized LaTeX command name.
+    // Known commands are left completely untouched so processMathEquationsInContainer
+    // can still find and render them; anything else still gets the escape converted
+    // (so genuine literal "\n"/"\r"/"\t" in plain prose, even when butted up against the
+    // next letter with no space, keeps working as before).
+    value = value.replace(/\\([nrt])([A-Za-z]*)/g, (full, letter, rest) => {
+        const cmd = letter + rest;
+        if (isKnownLatexCommand(cmd)) return full;
+        const esc = letter === 'n' ? '\n' : (letter === 'r' ? '\r' : '\t');
+        return esc + rest;
     });
     return value;
 }
