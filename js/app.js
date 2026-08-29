@@ -888,32 +888,37 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
     === PROFESSIONAL BOARD-STYLE EXAM PAPER FORMAT — MANDATORY (ONLY WHEN @Exam IS ACTIVE) ===
     When @Exam is explicitly selected, reproduce the look of a real Bangladesh-board photocopied question paper (dense, print-ready, black-and-white). Target ONE A4 page for a normal request; only spread to more pages when the user explicitly asks for more questions than one page can hold (@long_pdf, or an explicit large count).
 
-    -- HEADER (compact, top of page) --
+    -- HEADER (compact, top of page, always centered) --
     Emit exactly one <div class="exam-header-block" contenteditable="true"> containing:
       <div class="exam-header-title">...board/institution/subject title...</div>
       <div class="exam-header-metaline"><span class="exam-header-time">সময়–XX মিনিট</span><span class="exam-header-marks">পূর্ণমান–XX</span></div>
-    Keep this to 2–3 lines total. Do not add name/roll/section blanks for this board-paper format — it is a printed original paper, not a fill-in copy.
+    Keep this to 2–3 lines total. The title line must stay centered at the top — do not left-align it or bury it inside another block. Do not add name/roll/section blanks for this board-paper format — it is a printed original paper, not a fill-in copy.
+
+    -- NUMBERING RULE (APPLIES TO EVERY SECTION BELOW — CRITICAL) --
+    NEVER write question numbers, option letters, or sub-question letters yourself, in ANY script (no "1.", no "১.", no "(a)", no "(ক)", no "i.", nothing) at the start of a question/option/sub-item. The CSS automatically numbers every <div class="quiz-item">, <div class="quiz-option">, <div class="cq-item">, <div class="cq-subitem"> and <div class="short-q-item"> — writing your own number/letter on top of that produces duplicated numbering like "1.১". Question/option/sub-item text must start directly with the actual content, nothing else.
 
     -- SECTION 1: MCQ, THREE DENSE COLUMNS --
     Wrap ALL MCQs in one <div class="quiz-container">.
-    Each question is one <div class="quiz-item"> containing exactly one <div class="quiz-question"> (the stem) and one <div class="quiz-options"> with exactly FOUR <div class="quiz-option"> choices.
-    Do NOT put ক/খ/গ/ঘ or A/B/C/D labels inside option text; the CSS supplies them automatically.
+    Each question is one <div class="quiz-item"> containing exactly one <div class="quiz-question"> (the stem, no leading number) and one <div class="quiz-options"> with exactly FOUR <div class="quiz-option"> choices (no leading letter).
     Keep each question stem and its four options together as one unit; never split a question across columns/pages.
     Write options as short, natural phrases — the CSS lays the three columns out and wraps options inline/stacked automatically; do not add manual grids or line breaks.
     This section renders in three narrow print columns (like the reference board paper), so keep question stems and options concise — this is what lets ~25–30 questions sit per column.
-    After ALL MCQs, include one <div class="quiz-answer-key"><div class="quiz-answer-title">উত্তরমালা / Answer Key</div><div class="quiz-answer-grid">...</div></div> with exactly one <div class="quiz-answer-item"> per question, using the correct option letter. Keep this compact (small text) — it is a printed answer strip, not a highlighted callout.
+    After ALL MCQs, include one <div class="quiz-answer-key"><div class="quiz-answer-title">উত্তরমালা / Answer Key</div><div class="quiz-answer-grid">...</div></div> with exactly one <div class="quiz-answer-item"> per question, using the correct option letter. Keep this compact (small text) — it is a printed answer strip, not a highlighted callout. The app automatically forces this Answer Key onto its own fresh page — you do not need to add any page-break markup yourself, just place it right after the quiz-container.
     Never output MCQs as Markdown tables, loose numbered text, JSON, or plain letter lines.
 
     -- SECTION 2: CREATIVE QUESTIONS (সৃজনশীল), THREE COLUMNS --
     Only include this section if the user asked for creative/CQ questions (@CQ) or a full board-style paper.
     Start with <div class="exam-section-title">সৃজনশীল প্রশ্ন</div>.
     Wrap the creative questions in one <div class="cq-container">. Each is one <div class="cq-item"> laid out one-per-column (three columns → three creative questions visible side by side; more wrap to the next row).
-    Each <div class="cq-item"> may contain an optional short <div class="cq-stem">...উদ্দীপক...</div> and MUST contain <div class="cq-subquestions"> with four sub-parts, each a <div class="cq-subitem"><span class="cq-marks">১</span> ...question text...</div> for ক) জ্ঞান, খ) অনুধাবন, গ) প্রয়োগ, ঘ) উচ্চতর দক্ষতা (adjust mark values to what the user specifies, default ১+২+৩+৪). Keep every sub-question short — this section must stay compact enough to share the page with the MCQ section.
+    Each <div class="cq-item"> may contain an optional short <div class="cq-stem">...উদ্দীপক...</div> and MUST contain <div class="cq-subquestions"> with exactly four sub-parts in order (জ্ঞান, অনুধাবন, প্রয়োগ, উচ্চতর দক্ষতা), each a <div class="cq-subitem"><span class="cq-marks">১</span> ...question text, no leading ক/খ/গ/ঘ...</div> — the CSS supplies the ক)/খ)/গ)/ঘ) labels automatically from position, only the marks number and question text are yours to write (adjust mark values to what the user specifies, default ১+২+৩+৪). Keep every sub-question short — this section must stay compact enough to share the page with the MCQ section.
 
     -- SECTION 3: SHORT QUESTIONS + ANSWER SHEET, SIDE BY SIDE --
     Only include this section if the user asked for short questions (@Short Question) or a full board-style paper.
-    Output ONLY the left side yourself: <div class="short-q-list"> containing <div class="short-q-item"> entries, each a brief numbered short-answer question. Keep the list short (a handful of items) so it fits one column's height.
+    Output ONLY the left side yourself: <div class="short-q-list"> containing <div class="short-q-item"> entries (no leading number), each a brief short-answer question. Keep the list short (a handful of items) so it fits one column's height.
     Do NOT hand-build any OMR/answer-bubble grid — the app automatically generates the OMR sheet and places it beside your short-question list. Just emit the short-q-list; nothing more for this section.
+
+    -- PAGE-BREAK RULE --
+    The Answer Key always belongs on its own fresh page, after everything else (MCQ, CQ, short-question/OMR strip) — the app enforces this page break automatically, so just place <div class="quiz-answer-key"> last in your output and do not try to force page breaks yourself elsewhere.
 
     -- GENERAL EXAM-PAPER RULES --
     Treat any diagrams inside an exam paper as black-and-white line art only (no color fills) — outline strokes, no shaded regions.
