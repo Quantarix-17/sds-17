@@ -1748,6 +1748,17 @@ body.exam-document .doc-page-canvas {
   display: inline-block;
 }
 
+/* Small repeated title shown at the top of the Answer Key's own page —
+   keeps the title centered even though it's no longer the very first block. */
+.exam-answer-page-header {
+  border-bottom: 1px solid #111;
+  padding: 0 0 4px;
+  margin: 0 0 8px;
+}
+.exam-answer-page-header .exam-header-title {
+  font-size: 12pt;
+}
+
 /* ---- Section title (e.g. "সৃজনশীল প্রশ্ন") between exam sections ---- */
 .exam-section-title {
   font-weight: 800;
@@ -1807,6 +1818,10 @@ body.exam-document .quiz-container {
   color: #111;
   font-weight: 700;
 }
+/* Bengali-script questions get Bengali numerals (১, ২, ৩…), matching a real board paper. */
+.quiz-item.bangla-question .quiz-question::before {
+  content: counter(mcq-item, bengali) '. ';
+}
 
 /* Options — natural inline flow so short options share a line and long
    options wrap to their own, exactly like a real dense board-paper column. */
@@ -1846,10 +1861,12 @@ body.exam-document .quiz-container {
 .quiz-item.bangla-question .quiz-option:nth-child(3)::before { content: 'গ) '; }
 .quiz-item.bangla-question .quiz-option:nth-child(4)::before { content: 'ঘ) '; }
 
-/* Answer Key — plain printed strip, not a highlighted callout box */
+/* Answer Key — plain printed strip, not a highlighted callout box.
+   It is moved onto its own fresh page by finalizeExamDocumentIfNeeded(),
+   so it is styled here as a standalone top-level block, not a column-span
+   child of .quiz-container. */
 .quiz-answer-key {
-  column-span: all;
-  margin-top: 10px;
+  margin-top: 4px;
   padding: 6px 8px;
   background: #fff;
   border: 1px solid #111;
@@ -1862,6 +1879,7 @@ body.exam-document .quiz-container {
   font-weight: 800;
   font-size: 9.5pt;
   color: #111;
+  text-align: center;
   margin-bottom: 5px;
   padding-bottom: 3px;
   border-bottom: 1px solid #111;
@@ -1913,6 +1931,9 @@ body.exam-document .cq-container {
   font-weight: 700;
   color: #111;
 }
+.cq-container.bangla-mode .cq-item::before {
+  content: counter(cq-item, bengali) '. ';
+}
 .cq-stem {
   color: #111;
   font-style: italic;
@@ -1922,13 +1943,23 @@ body.exam-document .cq-container {
 .cq-subquestions {
   margin: 0;
   padding: 0;
+  counter-reset: cq-subitem;
 }
 .cq-subitem {
+  counter-increment: cq-subitem;
   display: block;
   margin: 0 0 2px;
   line-height: 1.28;
   color: #111;
 }
+.cq-subitem::before {
+  font-weight: 700;
+  margin-right: 2px;
+}
+.cq-subitem:nth-of-type(1)::before { content: 'ক) '; }
+.cq-subitem:nth-of-type(2)::before { content: 'খ) '; }
+.cq-subitem:nth-of-type(3)::before { content: 'গ) '; }
+.cq-subitem:nth-of-type(4)::before { content: 'ঘ) '; }
 .cq-marks {
   display: inline-block;
   min-width: 12px;
@@ -1966,6 +1997,9 @@ body.exam-document .cq-container {
 .short-q-item::before {
   content: counter(short-q-item) '. ';
   font-weight: 700;
+}
+.short-q-list.bangla-mode .short-q-item::before {
+  content: counter(short-q-item, bengali) '. ';
 }
 
 /* ---- OMR Sheet ---- */
