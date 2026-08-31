@@ -139,7 +139,6 @@ function flattenContentTopLevelNodes(tempSource) {
       !node.className.includes('block-') &&
       !node.className.includes('fc-') &&
       !node.className.includes('toc-') &&
-      !node.className.includes('quiz-') &&
       !node.className.includes('manual-page-break')) {
       Array.from(node.childNodes).forEach(child => topLevelNodes.push(child));
     } else {
@@ -922,286 +921,6 @@ function getMultiPageEditContext(pageNumbers) {
     }
   });
   return { contextString, totalPages, targetPages: nums };
-}
-
-// ===== EXAM FINALIZATION (IMPROVED) =====
-// Compact board-paper style header: title centered, then a single meta line
-// with time on the left and full marks on the right — matches a real
-// photocopied board question paper rather than a fill-in-the-blank cover sheet.
-function buildExamHeaderBlockHTML(subjectGuess, timeText, marksText) {
-  const title = (subjectGuess || 'Examination').trim();
-  const time = (timeText || 'Time: ___').trim();
-  const marks = (marksText || 'Full Marks: ___').trim();
-  return `<div class="exam-header-block" contenteditable="true">` +
-    `<div class="exam-header-title">${escapeHTMLForHeader(title)}</div>` +
-    `<div class="exam-header-metaline">` +
-    `<span class="exam-header-time">${escapeHTMLForHeader(time)}</span>` +
-    `<span class="exam-header-marks">${escapeHTMLForHeader(marks)}</span>` +
-    `</div>` +
-    `</div>`;
-}
-
-function escapeHTMLForHeader(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s || '');
-  return d.innerHTML;
-}
-
-function countMCQItemsInHTML(html) {
-  const temp = document.createElement('div');
-  temp.innerHTML = html || '';
-  let count = temp.querySelectorAll('.quiz-container .quiz-item').length;
-  if (!count) {
-    count = temp.querySelectorAll('.quiz-container').length ? Math.max(0, temp.querySelectorAll('.quiz-question').length) : 0;
-  }
-  return count;
-}
-
-function buildOMRSheetHTML(mcqCount, isBangla = false, compact = false) {
-  const count = Math.max(1, Math.min(200, mcqCount || 0));
-  const labels = isBangla ? ['ক', 'খ', 'গ', 'ঘ'] : ['A', 'B', 'C', 'D'];
-  const rows = [];
-  for (let q = 1; q <= count; q++) {
-    rows.push(
-      `<div class="omr-row"><span class="omr-qnum">${q}.</span>` +
-      labels.map(x => `<span class="omr-bubble">${x}</span>`).join('') +
-      `</div>`
-    );
-  }
-  const langClass = isBangla ? 'bangla-omr' : '';
-  const gridClass = compact ? 'omr-grid omr-compact' : 'omr-grid';
-  // Compact mode (used when the sheet shares the bottom row with the short-question
-  // list) skips the Name/Roll/Section header — that space is needed for the bubbles.
-  const headerHTML = compact ? '' :
-    `<div class="omr-sheet-header">` +
-    `<div class="exam-header-field"><span class="label">Name:</span><span class="blank">&nbsp;</span></div>` +
-    `<div class="exam-header-field"><span class="label">Roll:</span><span class="blank">&nbsp;</span></div>` +
-    `<div class="exam-header-field"><span class="label">Section:</span><span class="blank">&nbsp;</span></div>` +
-    `</div>`;
-  return `<div class="omr-sheet-page ${langClass}${compact ? ' omr-sheet-compact' : ''}">` +
-    `<div class="omr-sheet-title">${isBangla ? 'উত্তরপত্র' : 'Answer / OMR'}</div>` +
-    headerHTML +
-    `<div class="${gridClass}">${rows.join('')}</div>` +
-    `</div>`;
-}
-
-// Combines the AI-authored short-question list with the auto-built OMR sheet
-// into one side-by-side row, mirroring the bottom strip of a real board paper
-// (short questions on the left, the tick/answer grid on the right).
-function buildExamBottomRowHTML(shortListOuterHTML, omrHTML) {
-  return `<div class="exam-bottom-row">` +
-    `<div class="exam-bottom-left">${shortListOuterHTML}</div>` +
-    `<div class="exam-bottom-right">${omrHTML}</div>` +
-    `</div>`;
-}
-
-function guessExamTitleFromHTML(html) {
-  const temp = document.createElement('div');
-  temp.innerHTML = html || '';
-  const heading = temp.querySelector('h1, h2');
-  const text = heading ? heading.textContent.trim() : '';
-  return text ? `${text} — Examination` : 'Examination';
-}
-
-function tempTextForExamLanguage(html) {
-  const temp = document.createElement('div');
-  temp.innerHTML = html || '';
-  return temp.textContent || '';
-}
-
-// Defensive cleanup: the AI is instructed never to write its own question
-// numbers/letters (the CSS auto-numbers everything), but strip any it adds
-// anyway so we never end up with doubled numbering like "1.১".
-function stripLeadingAutoNumberFromText(text) {
-  return String(text || '').replace(
-    /^\s*(?:[০-৯0-9]{1,3}\s*[.।:)]|[কখগঘ]\s*[.)]|[a-dA-D]\s*[.)])\s*/,
-    ''
-  );
-}
-
-function stripLeadingAutoNumberFromElement(el) {
-  if (!el) return;
-  for (const node of Array.from(el.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (!node.textContent.replace(/^\s+/, '')) continue;
-      const stripped = stripLeadingAutoNumberFromText(node.textContent);
-      if (stripped !== node.textContent) node.textContent = stripped;
-      return;
-    }
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      stripLeadingAutoNumberFromElement(node);
-      return;
-    }
-  }
-}
-
-function normalizeGeneratedMCQs(rawHtml) {
-  if (!rawHtml || !/quiz-container/i.test(rawHtml)) return rawHtml;
-  const temp = document.createElement('div');
-  temp.innerHTML = rawHtml;
-  temp.querySelectorAll('.quiz-container').forEach(container => {
-    const items = Array.from(container.children).filter(el => el.classList && el.classList.contains('quiz-item'));
-    items.forEach((item) => {
-      const q = item.querySelector(':scope > .quiz-question');
-      const wrap = item.querySelector(':scope > .quiz-options');
-      if (!q || !wrap) return;
-      stripLeadingAutoNumberFromElement(q);
-      const qText = q.textContent || '';
-      if (/[\u0980-\u09FF]/.test(qText)) item.classList.add('bangla-question');
-      else item.classList.remove('bangla-question');
-      const opts = Array.from(wrap.children).filter(el => el.classList && el.classList.contains('quiz-option'));
-      opts.forEach(stripLeadingAutoNumberFromElement);
-      opts.slice(4).forEach(el => el.remove());
-    });
-    let key = container.querySelector(':scope > .quiz-answer-key');
-    if (!key && items.length) {
-      key = document.createElement('div');
-      key.className = 'quiz-answer-key';
-      key.innerHTML = '<div class="quiz-answer-title">Answer Key</div><div class="quiz-answer-grid"></div>';
-      container.appendChild(key);
-    }
-  });
-  return temp.innerHTML;
-}
-
-// Same defensive cleanup as normalizeGeneratedMCQs, but for the creative-question
-// (cq-container) and short-question (short-q-list) sections: strip any number/letter
-// the AI wrote on its own, and flag Bangla sections so CSS can number them with
-// Bengali digits (১, ২, ৩…) instead of Western ones.
-function normalizeGeneratedExamSections(rawHtml) {
-  if (!rawHtml || !(/cq-container/i.test(rawHtml) || /short-q-list/i.test(rawHtml))) return rawHtml;
-  const temp = document.createElement('div');
-  temp.innerHTML = rawHtml;
-
-  temp.querySelectorAll('.cq-container').forEach(container => {
-    const items = Array.from(container.children).filter(el => el.classList && el.classList.contains('cq-item'));
-    let hasBangla = false;
-    items.forEach((item) => {
-      const stem = item.querySelector(':scope > .cq-stem');
-      if (stem) stripLeadingAutoNumberFromElement(stem);
-      const subitems = item.querySelectorAll(':scope > .cq-subquestions > .cq-subitem');
-      subitems.forEach((sub) => {
-        const marks = sub.querySelector(':scope > .cq-marks');
-        for (const node of Array.from(sub.childNodes)) {
-          if (node === marks) continue;
-          if (node.nodeType === Node.TEXT_NODE && node.textContent.replace(/^\s+/, '')) {
-            const stripped = stripLeadingAutoNumberFromText(node.textContent);
-            if (stripped !== node.textContent) node.textContent = stripped;
-            break;
-          }
-        }
-      });
-      if (/[\u0980-\u09FF]/.test(item.textContent || '')) hasBangla = true;
-    });
-    container.classList.toggle('bangla-mode', hasBangla);
-  });
-
-  temp.querySelectorAll('.short-q-list').forEach(list => {
-    const items = Array.from(list.children).filter(el => el.classList && el.classList.contains('short-q-item'));
-    items.forEach(stripLeadingAutoNumberFromElement);
-    const hasBangla = /[\u0980-\u09FF]/.test(list.textContent || '');
-    list.classList.toggle('bangla-mode', hasBangla);
-  });
-
-  return temp.innerHTML;
-}
-
-// Moves the Answer Key to the very end of the document, on its own fresh
-// page (a manual-page-break the pagination engine already understands),
-// with a small centered title repeated above it — regardless of whether the
-// AI nested the key inside quiz-container or already placed it separately.
-function enforceAnswerKeyOwnPage(html) {
-  if (!html || !/quiz-answer-key/i.test(html)) return html;
-  const temp = document.createElement('div');
-  temp.innerHTML = html;
-  const key = temp.querySelector('.quiz-answer-key');
-  if (!key) return html;
-
-  // Already the last top-level node, directly preceded by a manual-page-break: nothing to do.
-  const prevSibling = key.previousElementSibling;
-  const isTopLevel = key.parentNode === temp;
-  if (isTopLevel && !key.nextElementSibling && prevSibling && prevSibling.classList.contains('manual-page-break')) {
-    return html;
-  }
-
-  key.parentNode.removeChild(key);
-
-  const titleEl = temp.querySelector('.exam-header-title');
-  const titleText = titleEl ? titleEl.textContent.trim() : '';
-
-  const breakDiv = document.createElement('div');
-  breakDiv.className = 'manual-page-break';
-  temp.appendChild(breakDiv);
-
-  if (titleText) {
-    const repeatedHeader = document.createElement('div');
-    repeatedHeader.className = 'exam-header-block exam-answer-page-header';
-    repeatedHeader.innerHTML = `<div class="exam-header-title">${escapeHTMLForHeader(titleText)}</div>`;
-    temp.appendChild(repeatedHeader);
-  }
-
-  temp.appendChild(key);
-  return temp.innerHTML;
-}
-
-function finalizeExamDocumentIfNeeded() {
-  try {
-    document.body.classList.add('exam-document');
-    // Board-style exam papers are always printed/photocopied black-and-white —
-    // force monochrome rendering (diagrams included) regardless of the toggle.
-    if (!document.body.classList.contains('photocopy-mode')) {
-      document.body.classList.add('photocopy-mode');
-      if (typeof updateModeButtonText === 'function') updateModeButtonText();
-    }
-
-    const currentHTML = getAllCanvasHTML();
-    if (!currentHTML || currentHTML.includes('Start typing here')) return;
-
-    const hasHeader = docContainer.querySelector('.exam-header-block');
-    const hasOMR = docContainer.querySelector('.omr-sheet-page');
-    const mcqCount = countMCQItemsInHTML(currentHTML);
-
-    let html = normalizeGeneratedMCQs(currentHTML);
-    html = normalizeGeneratedExamSections(html);
-    let changed = html !== currentHTML;
-
-    if (!hasHeader) {
-      html = buildExamHeaderBlockHTML(guessExamTitleFromHTML(currentHTML)) + html;
-      changed = true;
-    }
-
-    if (!hasOMR && mcqCount > 0) {
-      const hasBangla = /[\u0980-\u09FF]/.test(tempTextForExamLanguage(html));
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      const liveShortList = temp.querySelector('.short-q-list');
-      if (liveShortList) {
-        // Pull the AI-authored short-question list out of the flow and rebuild
-        // it side-by-side with a compact OMR grid, instead of stacking them.
-        const shortListHTML = liveShortList.outerHTML;
-        const omrHTML = buildOMRSheetHTML(mcqCount, hasBangla, true);
-        liveShortList.outerHTML = buildExamBottomRowHTML(shortListHTML, omrHTML);
-        html = temp.innerHTML;
-      } else {
-        html = html + buildOMRSheetHTML(mcqCount, hasBangla);
-      }
-      changed = true;
-    }
-
-    // Answer Key always starts on its own fresh page, after the MCQ/CQ/short
-    // question strip above it.
-    const beforeAnswerKeyFix = html;
-    html = enforceAnswerKeyOwnPage(html);
-    if (html !== beforeAnswerKeyFix) changed = true;
-
-    if (changed) {
-      setDocumentHTMLAndPaginate(html, false);
-      docContainer.scrollTop = 0;
-      if (typeof applyMonochromeDocumentStyles === 'function') applyMonochromeDocumentStyles();
-    }
-  } catch (e) {
-    console.warn('Exam finalization skipped:', e);
-  }
 }
 
 // ===== GET EXISTING HEADINGS =====
@@ -1992,12 +1711,12 @@ function applyMonochromeDocumentStyles() {
   const pages = docContainer.querySelectorAll('.doc-page-canvas');
   pages.forEach(page => {
     page.style.color = monochrome ? '#000' : '';
-    page.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote,dt,dd,th,td,caption,figcaption,.quiz-question,.quiz-option,.quiz-answer-title,.quiz-explanation,.sol-label,.sol-given,.math-step-label,.math-final-answer').forEach(el => {
+    page.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote,dt,dd,th,td,caption,figcaption').forEach(el => {
       el.style.color = monochrome ? '#000' : '';
       if (!monochrome) el.style.removeProperty('border-color');
     });
 
-    page.querySelectorAll('table, th, td, .block-solution, .math-final-answer, .sol-label, .quiz-option, .quiz-answer-key, .figure-pro, .figure-frame').forEach(el => {
+    page.querySelectorAll('table, th, td, .block-solution, .math-final-answer, .sol-label, .figure-pro, .figure-frame').forEach(el => {
       if (monochrome) {
         el.style.setProperty('border-color', '#000', 'important');
         el.style.setProperty('box-shadow', 'none', 'important');
@@ -2086,7 +1805,6 @@ window.fitEditorPagesToScreen = fitEditorPagesToScreen;
 window.runDocumentOutputIntegrityPass = runDocumentOutputIntegrityPass;
 window.isDiagramEditRequest = isDiagramEditRequest;
 window.handleDiagramEditOrRefine = handleDiagramEditOrRefine;
-window.finalizeExamDocumentIfNeeded = finalizeExamDocumentIfNeeded;
 window.scheduleReflow = scheduleReflow;
 window.applyPDFVisualFormat = applyPDFVisualFormat;
 window.applyPDFTextFormat = applyPDFTextFormat;
