@@ -886,12 +886,10 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Enhanced + Scrollable) =====
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (No exam/MCQ/OMR) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
-  const isExam = document.body.classList.contains('exam-document');
-
   const pagesHTML = pageChunks.map((html, idx) =>
-    `<div class="pdf-page-wrap"><div class="pdf-page ${isExam ? 'exam-document' : ''}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+    `<div class="pdf-page-wrap"><div class="pdf-page">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
 
   return `<!DOCTYPE html><html><head>
@@ -917,43 +915,9 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       p{margin-bottom:8pt} ul,ol{margin:6pt 0 8pt 20pt}
       table{width:100%;border-collapse:collapse;table-layout:fixed;margin:10pt 0} th{background:${isMonochromeMode?'#e5e7eb':'#2563eb'};color:${isMonochromeMode?'#000':'#fff'};padding:8px;border:1px solid #cbd5e1;text-align:left} td{border:1px solid #cbd5e1;padding:6px 8px;word-break:break-word} img{max-width:100%;height:auto;object-fit:contain}
       pre,code{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
-      .quiz-container{counter-reset:mcq-item;margin:0;font-family:'Times New Roman',Times,serif;font-size:11.2pt;line-height:1.44;width:100%}
-      .exam-document .quiz-container{column-count:2;column-gap:28px;column-fill:auto;font-size:11.2pt;line-height:1.44}
-      .quiz-item{counter-increment:mcq-item;display:block;break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 8px;padding:0;border:0}
-      .quiz-question{font-weight:700;color:${isMonochromeMode?'#000':'#111'};margin:0 0 3px;line-height:1.44}
-      .quiz-question::before{content:counter(mcq-item) '. ';color:${isMonochromeMode?'#000':'#111'};font-weight:700}
-      .quiz-options{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1px 16px;margin:0 0 0 18px;padding:0;font-size:10.6pt;color:${isMonochromeMode?'#000':'#111'}}
-      .quiz-option{position:relative;min-width:0;padding:0 2px 0 22px;border:0;border-radius:0;background:transparent;word-break:normal;overflow-wrap:anywhere;line-height:1.34;break-inside:avoid}
-      .quiz-option::before{position:absolute;left:0;top:0;width:18px;font-weight:700;color:${isMonochromeMode?'#000':'#111'}}
-      .quiz-option:nth-child(1)::before{content:'(A)'}.quiz-option:nth-child(2)::before{content:'(B)'}.quiz-option:nth-child(3)::before{content:'(C)'}.quiz-option:nth-child(4)::before{content:'(D)'}
-      .quiz-item.bangla-question .quiz-option:nth-child(1)::before{content:'ক)'}
-      .quiz-item.bangla-question .quiz-option:nth-child(2)::before{content:'খ)'}
-      .quiz-item.bangla-question .quiz-option:nth-child(3)::before{content:'গ)'}
-      .quiz-item.bangla-question .quiz-option:nth-child(4)::before{content:'ঘ)'}
-      .quiz-answer-key{column-span:all;margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}.quiz-answer-title{font-weight:800;font-size:11pt;color:${isMonochromeMode?'#000':'#1e3a8a'};margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.quiz-answer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 10px;line-height:1.35}
       .block-example{background:${isMonochromeMode?'#fff':'#f0fdf4'};border-left:4px solid ${isMonochromeMode?'#000':'#10b981'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-definition{background:${isMonochromeMode?'#fff':'#eff6ff'};border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-warning{background:${isMonochromeMode?'#fff':'#fef2f2'};border-left:4px solid ${isMonochromeMode?'#000':'#ef4444'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-important{background:${isMonochromeMode?'#fff':'#fff7ed'};border-left:4px solid ${isMonochromeMode?'#000':'#f97316'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-note{background:${isMonochromeMode?'#fff':'#fdf2f8'};border-left:4px solid ${isMonochromeMode?'#000':'#ec4899'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
       .block-accent{background:transparent !important;border:none !important;border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'} !important;padding:8px 14px;margin:10px 0}.block-solution{background:${isMonochromeMode?'#fff':'#f5f3ff'};border:1px solid ${isMonochromeMode?'#000':'#ddd6fe'};border-radius:8px;padding:14px 16px 10px;margin:14px 0}
-      .exam-header-block{border:0;border-bottom:2px solid #111;border-radius:0;padding:0 0 10px;margin:0 0 14px;font-family:'Times New Roman',Times,serif;page-break-inside:avoid;break-inside:avoid}
-      .exam-header-title{text-align:center;font-size:17pt;font-weight:800;color:#111;margin:0 0 3px;line-height:1.2}
-      .exam-header-subtitle{text-align:center;font-size:11pt;color:#111;margin:0 0 8px;line-height:1.25}
-      .exam-header-rule{border:none;border-top:1px solid #111;margin:0 0 8px}
-      .exam-header-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:5px 18px;font-size:10.5pt;margin-bottom:5px}
-      .exam-header-row+.exam-header-row{grid-template-columns:1fr 1fr}
-      .exam-header-field{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
-      .exam-header-field .label{font-weight:700;color:${isMonochromeMode?'#000':'#16233f'}}
-      .exam-header-field .blank{flex:1;border-bottom:1px solid #64748b;min-width:40px;min-height:1.1em;display:inline-block}
-      .omr-sheet-page{padding-top:4px;break-inside:avoid;page-break-inside:avoid}
-      .omr-sheet-title{text-align:center;font-size:14pt;font-weight:800;letter-spacing:.06em;color:${isMonochromeMode?'#000':'#1e3a8a'};margin:0 0 4px}
-      .omr-sheet-header{border:2px solid #16233f;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px 18px;font-size:10.5pt}
-      .omr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 10px;border:1px solid #cbd5e1;border-radius:10px;padding:12px 14px}
-      .omr-row{display:flex;align-items:center;gap:6px;break-inside:avoid;page-break-inside:avoid;font-size:9.5pt}
-      .omr-qnum{width:20px;font-weight:700;color:${isMonochromeMode?'#000':'#16233f'};flex-shrink:0}
-      .omr-bubble{width:15px;height:15px;border-radius:50%;border:1.4px solid #334155;display:inline-flex;align-items:center;justify-content:center;font-size:7pt;font-weight:700;color:#334155;flex-shrink:0}
-      .omr-sheet-page.bangla-omr .omr-bubble { font-size:6.2pt; }
       .photocopy-mode .quiz-answer-key { background:#fff !important; border-color:#000 !important; }
-      .photocopy-mode .omr-sheet-header { border-color:#000 !important; }
-      .photocopy-mode .omr-grid { border-color:#000 !important; }
-      .photocopy-mode .omr-bubble { border-color:#000 !important; color:#000 !important; }
       @media print { html, body { height:auto !important; overflow:visible !important; -webkit-overflow-scrolling:auto !important; } body{padding:0 !important;background:#fff !important; display:block !important;} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always; break-after:page;} .pdf-page-wrap:last-child{page-break-after:auto; break-after:auto;} .pdf-page{transform:none !important;box-shadow:none !important} }
       @media (max-width:850px) { body{padding:8px 0 !important; align-items:center;} .pdf-page-wrap{margin:0 auto 12px; overflow:hidden;} .pdf-page{transform-origin:top left;} }
     </style>
@@ -1046,43 +1010,9 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
-// ===== COMPUTE TRUE PDF PAGES (UPDATED: FIXED BLANK PAGES) =====
+// ===== COMPUTE TRUE PDF PAGES =====
 async function computeTruePDFPages(htmlOverride) {
-  const isExam = document.body.classList.contains('exam-document');
   const rawHtml = htmlOverride !== undefined ? htmlOverride : (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '');
-
-  const container = document.getElementById('document-view-container');
-  if (isExam && htmlOverride === undefined && container) {
-    const offscreen = document.createElement('div');
-    offscreen.style.cssText = `position:fixed;left:-10000px;top:0;width:${PDF_LAYOUT.width}px;pointer-events:none;visibility:hidden;z-index:-1;`;
-    document.body.appendChild(offscreen);
-    const sourcePages = Array.from(container.querySelectorAll('.doc-page-canvas'));
-    const pageEls = sourcePages.map(source => {
-      const page = typeof createPDFMeasurePage === 'function' ? createPDFMeasurePage(offscreen) : null;
-      if (page) {
-        page.classList.add('exam-document');
-        page.innerHTML = source.innerHTML;
-        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(page);
-        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(page);
-        if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
-      }
-      return page;
-    }).filter(Boolean);
-    if (!pageEls.length && typeof createPDFMeasurePage === 'function') {
-      pageEls.push(createPDFMeasurePage(offscreen));
-    }
-    await Promise.all(pageEls.map(el => typeof waitForPDFLayoutStable === 'function' ? waitForPDFLayoutStable(el) : Promise.resolve()));
-    return {
-      offscreen,
-      pages: pageEls.map(el => ({
-        el,
-        html: el.innerHTML,
-        overflow: typeof pageFits === 'function' ? !pageFits(el) : false,
-        brokenEquations: typeof findBrokenEquations === 'function' ? findBrokenEquations(el) : [],
-        brokenDiagrams: typeof findBrokenDiagrams === 'function' ? findBrokenDiagrams(el) : []
-      })).filter(p => p.html && p.html.trim())
-    };
-  }
 
   const offscreen = document.createElement('div');
   offscreen.style.cssText = `position:fixed;left:-10000px;top:0;width:${PDF_LAYOUT.width}px;pointer-events:none;visibility:hidden;z-index:-1;`;
@@ -1114,7 +1044,7 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  // Force shrink every page to fit, not just overflow ones
+  // Force shrink every page to fit
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
@@ -1128,7 +1058,7 @@ async function computeTruePDFPages(htmlOverride) {
     }
   }
 
-  // --- IMPROVED FILTERING: remove pages that only have a footer or are completely empty ---
+  // Filter out completely empty pages
   const pages = pageEls.map(el => ({
     el,
     html: el.innerHTML,
@@ -1136,12 +1066,11 @@ async function computeTruePDFPages(htmlOverride) {
     brokenEquations: typeof findBrokenEquations === 'function' ? findBrokenEquations(el) : [],
     brokenDiagrams: typeof findBrokenDiagrams === 'function' ? findBrokenDiagrams(el) : []
   })).filter(p => {
-    // Check if the page has any visible content besides the footer
     const clone = p.el.cloneNode(true);
     const footer = clone.querySelector('.page-footer-number');
     if (footer) footer.remove();
     const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
-    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution, .quiz-container, .omr-sheet-page');
+    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution');
     const hasContent = text.length > 0 || hasVisual;
     return hasContent;
   });
@@ -1221,7 +1150,7 @@ function applyLocalMarginSafetyFixes(result) {
   }
 }
 
-// ===== SWITCH PREVIEW TAB (FIXED: use !important to guarantee visibility) =====
+// ===== SWITCH PREVIEW TAB =====
 function switchPreviewTab(tabName) {
   const docView = document.getElementById('document-view-container');
   const pdfView = document.getElementById('pdf-view-container');
@@ -1549,134 +1478,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
         return pageHasContent(currentPage) ? createPage() : currentPage;
     }
 
-    // ---- SPECIAL: MCQ Quiz Container ----
-    if (node.classList && node.classList.contains('quiz-container')) {
-        const items = Array.from(node.querySelectorAll(':scope > .quiz-item'));
-        if (items.length === 0) {
-            if (pageHasContent(currentPage)) currentPage = createPage();
-            const clone = node.cloneNode(true);
-            currentPage.appendChild(clone);
-            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
-            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
-            return currentPage;
-        }
-
-        const testClone = node.cloneNode(true);
-        const tempPage = currentPage.cloneNode(true);
-        const footer = tempPage.querySelector('.page-footer-number');
-        if (footer) footer.remove();
-        tempPage.appendChild(testClone);
-        const measurePage = document.createElement('div');
-        measurePage.className = 'doc-page-canvas pdf-export-measure-page';
-        measurePage.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
-        document.body.appendChild(measurePage);
-        measurePage.innerHTML = '';
-        Array.from(tempPage.childNodes).forEach(child => {
-            if (!child.classList || !child.classList.contains('page-footer-number')) {
-                measurePage.appendChild(child.cloneNode(true));
-            }
-        });
-        measurePage.style.display = 'block';
-        void measurePage.offsetHeight;
-        const fits = measurePage.scrollHeight <= 1123;
-        measurePage.style.display = '';
-        measurePage.innerHTML = '';
-        document.body.removeChild(measurePage);
-
-        if (fits) {
-            const clone = node.cloneNode(true);
-            currentPage.appendChild(clone);
-            if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
-            if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
-            return currentPage;
-        }
-
-        if (pageHasContent(currentPage)) currentPage = createPage();
-
-        let quizContainer = document.createElement('div');
-        quizContainer.className = 'quiz-container';
-        Array.from(node.attributes).forEach(attr => {
-            if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
-        });
-
-        let currentPageForQuiz = currentPage;
-        currentPageForQuiz.appendChild(quizContainer);
-        let quizHasContent = false;
-
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            const itemClone = item.cloneNode(true);
-            quizContainer.appendChild(itemClone);
-
-            const testPage = currentPageForQuiz.cloneNode(true);
-            const footer2 = testPage.querySelector('.page-footer-number');
-            if (footer2) footer2.remove();
-            const measurePage2 = document.createElement('div');
-            measurePage2.className = 'doc-page-canvas pdf-export-measure-page';
-            measurePage2.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:1123px;padding:62px 58px 58px 58px;box-sizing:border-box;overflow:hidden;visibility:hidden;pointer-events:none;';
-            document.body.appendChild(measurePage2);
-            measurePage2.innerHTML = '';
-            Array.from(testPage.childNodes).forEach(child => {
-                if (!child.classList || !child.classList.contains('page-footer-number')) {
-                    measurePage2.appendChild(child.cloneNode(true));
-                }
-            });
-            measurePage2.style.display = 'block';
-            void measurePage2.offsetHeight;
-            const fits2 = measurePage2.scrollHeight <= 1123;
-            measurePage2.style.display = '';
-            measurePage2.innerHTML = '';
-            document.body.removeChild(measurePage2);
-
-            if (!fits2) {
-                quizContainer.removeChild(itemClone);
-                if (quizHasContent) {
-                    currentPageForQuiz = createPage();
-                    if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
-                    if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
-                    quizContainer = document.createElement('div');
-                    quizContainer.className = 'quiz-container';
-                    Array.from(node.attributes).forEach(attr => {
-                        if (attr.name !== 'class') quizContainer.setAttribute(attr.name, attr.value);
-                    });
-                    currentPageForQuiz.appendChild(quizContainer);
-                    const newItemClone = item.cloneNode(true);
-                    quizContainer.appendChild(newItemClone);
-                    quizHasContent = true;
-                } else {
-                    const newItemClone2 = item.cloneNode(true);
-                    quizContainer.appendChild(newItemClone2);
-                    quizHasContent = true;
-                }
-            } else {
-                quizHasContent = true;
-            }
-        }
-        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPageForQuiz);
-        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPageForQuiz);
-        return currentPageForQuiz;
-    }
-
-    // ---- SPECIAL: OMR Sheet ----
-    if (node.classList && node.classList.contains('omr-sheet-page')) {
-        if (pageHasContent(currentPage)) currentPage = createPage();
-        const clone = node.cloneNode(true);
-        currentPage.appendChild(clone);
-        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
-        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
-        return currentPage;
-    }
-
-    // ---- SPECIAL: Exam Header ----
-    if (node.classList && node.classList.contains('exam-header-block')) {
-        if (pageHasContent(currentPage)) currentPage = createPage();
-        const clone = node.cloneNode(true);
-        currentPage.appendChild(clone);
-        if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(currentPage);
-        if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(currentPage);
-        return currentPage;
-    }
-
     // ---- Normal node ----
     const testClone2 = appendClone(currentPage, node);
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone2);
@@ -1732,7 +1533,7 @@ function pageHasContent(page) {
     const footer = clone.querySelector('.page-footer-number');
     if (footer) footer.remove();
     const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
-    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution, .quiz-container, .omr-sheet-page, .exam-header-block');
+    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution');
     return text.length > 0 || hasVisual;
 }
 
