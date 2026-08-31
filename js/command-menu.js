@@ -103,14 +103,12 @@ function isDocumentOperationIntent(id) {
   return ['edit', 'refine', 'refine_equation', 'redesign_diagram', 'beautify', 'refine_pagination'].includes(id);
 }
 
-// ===== DEPENDENCY MANAGEMENT (UPDATED: allow @exam + @create_pdf coexistence) =====
+// ===== DEPENDENCY MANAGEMENT (no exam/MCQ logic) =====
 function ensureCommandDependencies(cmd, { silent = false } = {}) {
   if (!cmd) return false;
   if (!window.APP_STATE) return false;
   const sel = window.APP_STATE.selectedCommands;
   const hasChat = sel.some(c => c.id === 'chat');
-  const hasExam = sel.some(c => c.id === 'exam');
-  const hasCreatePdf = sel.some(c => c.id === 'create_pdf');
 
   if (cmd.id === 'chat') {
     window.APP_STATE.selectedCommands = [{
@@ -123,47 +121,7 @@ function ensureCommandDependencies(cmd, { silent = false } = {}) {
     return false;
   }
 
-  // --- UPDATED: For MCQ/CQ/Short Question, always ensure @exam is present ---
-  if (cmd.id === 'mcq' || cmd.id === 'cq' || cmd.id === 'short_question') {
-    if (!hasExam) {
-      const examCmd = getAtCommandById('exam');
-      if (examCmd) {
-        window.APP_STATE.selectedCommands.unshift({
-          id: examCmd.id, category: examCmd.category, label: examCmd.label,
-          icon: examCmd.icon, param: null, implicit: true
-        });
-        if (!silent) displayToastNotification('🔍 @Exam auto-enabled for MCQ generation');
-      }
-    }
-    // If @create_pdf is not present, add it automatically as well (if not already)
-    if (!hasCreatePdf) {
-      const createPdfCmd = getAtCommandById('create_pdf');
-      if (createPdfCmd) {
-        window.APP_STATE.selectedCommands.unshift({
-          id: createPdfCmd.id, category: createPdfCmd.category, label: createPdfCmd.label,
-          icon: createPdfCmd.icon, param: null, implicit: true
-        });
-        if (!silent) displayToastNotification('📄 @Create PDF auto-enabled for document generation');
-      }
-    }
-  }
-
-  if (cmd.id === 'exercise' && !hasExam && !hasCreatePdf) {
-    const cp = getAtCommandById('create_pdf');
-    if (cp) {
-      window.APP_STATE.selectedCommands.unshift({
-        id: cp.id, category: cp.category, label: cp.label,
-        icon: cp.icon, param: null, implicit: true
-      });
-      if (!silent) displayToastNotification('Settings @Create PDF enabled for @Exercise');
-    }
-  }
-
-  // --- REMOVED mutual exclusivity between @exam and @create_pdf ---
-  // Previously: if (cmd.id === 'exam') { window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'create_pdf'); }
-  // and if (cmd.id === 'create_pdf') { window.APP_STATE.selectedCommands = sel.filter(c => c.id !== 'exam'); }
-  // Now we allow both to coexist.
-
+  // No exam/MCQ auto-parent logic; only handle create_pdf parent for length commands
   if (cmd.requiresDocument && !hasDocumentContentForAtCommands()) {
     if (!silent) showAtCommandToast(`@${cmd.label} requires an existing document first.`);
     return false;
@@ -198,8 +156,6 @@ function getAtCommandDisabledReason(cmd) {
   if (!window.APP_STATE) return 'Application state unavailable';
   const sel = window.APP_STATE.selectedCommands;
   const hasChat = sel.some(c => c.id === 'chat');
-  const hasExam = sel.some(c => c.id === 'exam');
-  const hasCreatePdf = sel.some(c => c.id === 'create_pdf');
   const primary = getPrimaryIntent(sel);
   const hasExistingDocument = hasDocumentContentForAtCommands();
 
@@ -210,13 +166,11 @@ function getAtCommandDisabledReason(cmd) {
     if (primary && primary.id !== cmd.id) {
       return `Remove @${primary.label} first — only one primary action is allowed`;
     }
-    // Allow both @exam and @create_pdf to coexist, so no conflict here.
     if (cmd.requiresDocument && !hasExistingDocument) return 'Create/open a document first';
   }
 
   if (cmd.category === 'length') {
-    if (hasExam) return 'Length options apply to @Create PDF, not @Exam';
-    if (!hasCreatePdf) return 'Select @Create PDF first';
+    if (!sel.some(c => c.id === 'create_pdf')) return 'Select @Create PDF first';
     const other = sel.find(c => c.category === 'length' && c.id !== cmd.id);
     if (other) return `Remove @${other.label} first — choose one length`;
   }
@@ -229,36 +183,18 @@ function getAtCommandDisabledReason(cmd) {
   }
 
   if (cmd.category === 'language') {
-    if (!primary) return 'Select @Create PDF, @Exam, or a document-editing action first';
+    if (!primary) return 'Select @Create PDF or a document-editing action first';
     const same = sel.find(c => c.category === 'language' && c.id !== cmd.id);
     if (same) return `Remove @${same.label} first`;
   }
 
   if (cmd.category === 'visual') {
-    if (!(hasCreatePdf || hasExam)) return 'Select @Create PDF or @Exam first';
+    if (!sel.some(c => c.id === 'create_pdf')) return 'Select @Create PDF first';
   }
 
-  if (cmd.category === 'content') {
-    // Allow MCQ only if @exam is selected (which we auto-add) or if @create_pdf is selected? 
-    // We'll keep the exam requirement, but since we auto-add exam, it will be enabled.
-    return hasExam ? null : 'Select @Exam first (auto-enabled when you choose MCQ)';
-  }
-
-  if (cmd.id === 'exercise' || cmd.category === 'practice') {
-    if (hasExam || hasCreatePdf || (primary && isDocumentOperationIntent(primary.id))) return null;
-    return null;
-  }
-
-  if (cmd.category === 'difficulty') {
-    if (!hasExam) return 'Select @Exam first';
-    const other = sel.find(c => c.category === 'difficulty' && c.id !== cmd.id);
-    if (other) return `Remove @${other.label} first — choose one difficulty`;
-  }
-
-  if (hasCreatePdf && primary && isDocumentOperationIntent(primary.id)) {
-    if (cmd.id === 'long_pdf' || cmd.id === 'short_pdf' || cmd.id === 'canvas') {
-      return 'Remove the current editing action first';
-    }
+  if (hasChat && sel.length > 0) {
+    if (cmd.id === 'chat') return null;
+    return 'Remove @Chat first — @Chat is standalone';
   }
 
   return null;
@@ -402,12 +338,11 @@ function attemptAddAtCommand(cmd, param, options = {}) {
   sel = window.APP_STATE.selectedCommands;
 
   if (cmd.category === 'intent') {
-    const existingPrimary = sel.find(c => c.category === 'intent' && c.id !== cmd.id && c.id !== 'create_pdf' && c.id !== cmd.autoParent);
-    if (existingPrimary && existingPrimary.id !== 'exam') {
+    const existingPrimary = sel.find(c => c.category === 'intent' && c.id !== cmd.id && c.id !== cmd.autoParent);
+    if (existingPrimary) {
       window.APP_STATE.selectedCommands = sel.filter(c => c.id !== existingPrimary.id);
       sel = window.APP_STATE.selectedCommands;
     }
-    // REMOVED: no filter that removes create_pdf when exam is added
   }
 
   if (cmd.category !== 'content') {
@@ -420,9 +355,9 @@ function attemptAddAtCommand(cmd, param, options = {}) {
   }
 
   const already = sel.find(c => c.id === cmd.id);
-  const normalizedParam = param != null ? String(param) : (cmd.category === 'content' ? String(cmd.defaultCount || 5) : null);
+  const normalizedParam = param != null ? String(param) : null;
   if (already) {
-    if (param != null || (cmd.category === 'content' && !already.param)) already.param = normalizedParam;
+    if (param != null) already.param = normalizedParam;
     already.implicit = already.implicit && param == null ? true : false;
   } else {
     sel.push({
@@ -441,8 +376,6 @@ function pruneDependentAtCommandSelections() {
   if (!window.APP_STATE) return;
   let sel = window.APP_STATE.selectedCommands.slice();
   const removed = [];
-  const hasExam = sel.some(c => c.id === 'exam');
-  const hasCreatePdf = sel.some(c => c.id === 'create_pdf');
 
   if (sel.some(c => c.id === 'chat')) {
     const chat = sel.find(c => c.id === 'chat');
@@ -451,37 +384,9 @@ function pruneDependentAtCommandSelections() {
     sel = [chat];
   }
 
-  // REMOVED: mutual exclusivity between exam and create_pdf
-  // Now they can coexist.
-
-  const effectiveExam = sel.some(c => c.id === 'exam');
-  const effectiveCreatePdf = sel.some(c => c.id === 'create_pdf');
-  const primary = getPrimaryIntent(sel);
-
-  if (primary) {
-    const primaries = sel.filter(c => c.category === 'intent' && c.id !== primary.id && c.id !== 'chat' && !c.implicit);
-    if (primaries.length) {
-      removed.push(...primaries);
-      sel = sel.filter(c => !primaries.includes(c));
-    }
-  }
-
-  if (!effectiveExam) {
-    const examOnly = sel.filter(c => c.category === 'content' || c.category === 'difficulty');
-    if (examOnly.length) removed.push(...examOnly);
-    sel = sel.filter(c => c.category !== 'content' && c.category !== 'difficulty');
-  }
-
-  const hasExercise = sel.some(c => c.id === 'exercise');
-  const hasDocOperation = sel.some(c => c.category === 'intent' && isDocumentOperationIntent(c.id));
-  if (hasExercise && !effectiveExam && !effectiveCreatePdf && !hasDocOperation) {
-    const ex = sel.find(c => c.id === 'exercise');
-    removed.push(ex);
-    sel = sel.filter(c => c.id !== 'exercise');
-  }
-
-  // If neither exam nor create_pdf is present, remove length, canvas, language
-  if (!effectiveCreatePdf && !effectiveExam) {
+  // Only keep length/visual/language if create_pdf is present
+  const hasCreatePdf = sel.some(c => c.id === 'create_pdf');
+  if (!hasCreatePdf) {
     const invalid = sel.filter(c => c.category === 'length' || c.id === 'canvas' || c.id === 'language');
     if (invalid.length) removed.push(...invalid);
     sel = sel.filter(c => c.category !== 'length' && c.id !== 'canvas' && c.id !== 'language');
@@ -520,12 +425,10 @@ function renderSelectedCommandChips() {
   window.APP_STATE.selectedCommands.forEach(c => {
     const chip = document.createElement('span');
     chip.className = 'at-chip';
-    const countedQuestion = (c.id === 'mcq' || c.id === 'cq') && c.param;
-    const labelText = countedQuestion ? `@${c.label}` : (c.param ? `@${c.label.replace(/\s*\[.*?\]/, '')}:${c.param}` : `@${c.label}`);
+    const labelText = c.param ? `@${c.label.replace(/\s*\[.*?\]/, '')}:${c.param}` : `@${c.label}`;
     if (c.implicit) chip.classList.add('at-chip-implicit');
     const labelSpan = document.createElement('span');
-    labelSpan.innerHTML = `<span class="at-chip-icon">${renderCommandIcon(c.icon)}</span><span>${labelText}</span>` +
-      (countedQuestion ? `<span class="at-chip-count">${parseInt(c.param, 10)} questions</span>` : '');
+    labelSpan.innerHTML = `<span class="at-chip-icon">${renderCommandIcon(c.icon)}</span><span>${labelText}</span>`;
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'at-chip-remove';
@@ -605,40 +508,6 @@ function renderAtCommandMenuList() {
     item.appendChild(iconSpan);
     item.appendChild(textWrap);
 
-    if (isSelected && !disabled && cmd.category === 'content') {
-      const selectedCmd = window.APP_STATE.selectedCommands.find(c => c.id === cmd.id);
-      const parsedDefault = parseInt(cmd.defaultCount, 10);
-      const defaultCount = Number.isFinite(parsedDefault) && parsedDefault > 0 ? parsedDefault : 5;
-      const countWrap = document.createElement('span');
-      countWrap.className = 'at-question-count-control';
-      const countLabel = document.createElement('label');
-      countLabel.textContent = 'Questions';
-      const countInput = document.createElement('input');
-      countInput.type = 'number';
-      countInput.min = '1';
-      countInput.max = '200';
-      countInput.step = '1';
-      countInput.value = String(Math.max(1, Math.min(200, parseInt(selectedCmd && selectedCmd.param || defaultCount, 10) || defaultCount)));
-      countInput.setAttribute('aria-label', `Number of ${cmd.label} questions`);
-      countInput.title = `Number of @${cmd.label} questions`;
-      const commitQuestionCount = () => {
-        const parsed = parseInt(countInput.value || String(defaultCount), 10);
-        const value = Number.isFinite(parsed) ? Math.max(1, Math.min(200, parsed)) : defaultCount;
-        countInput.value = String(value);
-        const target = window.APP_STATE.selectedCommands.find(c => c.id === cmd.id);
-        if (target) { target.param = String(value);
-          renderSelectedCommandChips(); }
-      };
-      countInput.oninput = commitQuestionCount;
-      countInput.onchange = commitQuestionCount;
-      countInput.onclick = e => e.stopPropagation();
-      countInput.onpointerdown = e => e.stopPropagation();
-      countInput.ontouchstart = e => e.stopPropagation();
-      countInput.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); };
-      countWrap.appendChild(countLabel);
-      countWrap.appendChild(countInput);
-      item.appendChild(countWrap);
-    }
     if (isSelected && !disabled) {
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
@@ -819,22 +688,9 @@ function buildIntentPayload() {
   const intentCmd = sel.find(c => c.category === 'intent' && !c.implicit) || findCat('intent');
   if (!intentCmd) return null;
   const lengthCmd = findCat('length');
-  const difficultyCmd = findCat('difficulty');
   const targetCmd = findCat('target');
   const languageCmd = findCat('language');
   const visualCmd = findCat('visual');
-  const contentCmds = sel.filter(c => c.category === 'content' || c.category === 'practice');
-
-  const hasMcq = contentCmds.some(c => c.id === 'mcq');
-  const hasCq = contentCmds.some(c => c.id === 'cq');
-  const hasShort = contentCmds.some(c => c.id === 'short_question');
-  const hasExercise = contentCmds.some(c => c.id === 'exercise');
-
-  const questionCounts = {
-    mcq: (() => { const c = sel.find(x => x.id === 'mcq'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : (hasMcq ? 20 : null); })(),
-    cq: (() => { const c = sel.find(x => x.id === 'cq'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : null; })(),
-    short_question: (() => { const c = sel.find(x => x.id === 'short_question'); const n = c && parseInt(c.param, 10); return Number.isFinite(n) && n > 0 ? n : null; })()
-  };
 
   let pageTarget = (targetCmd && targetCmd.param) ? parseInt(targetCmd.param, 10) : null;
   if (intentCmd.id === 'edit' && intentCmd.param) {
@@ -845,27 +701,16 @@ function buildIntentPayload() {
     }
   }
 
-  // Determine if the intent is exam-related: if @exam is present or any content command is present
-  const isExamMode = sel.some(c => c.id === 'exam') || hasMcq || hasCq || hasShort;
-
   return {
     intent: intentCmd.id,
     length: lengthCmd ? lengthCmd.id : null,
-    difficulty: difficultyCmd ? difficultyCmd.id : null,
     pageTarget: pageTarget,
     language: (languageCmd && languageCmd.param) ? languageCmd.param : null,
-    contentTypes: contentCmds.map(c => c.id),
-    questionCounts,
     visual: visualCmd ? visualCmd.id : null,
     sectionMode: typeof getSectionModeEnabled === 'function' ? getSectionModeEnabled() : false,
     refinePaginationPage: (intentCmd.id === 'refine_pagination' && intentCmd.param) ? parseInt(intentCmd.param, 10) : null,
     editPages: (intentCmd.id === 'edit' && intentCmd.param) ?
-      intentCmd.param.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0) : null,
-    hasMcq: hasMcq,
-    hasCq: hasCq,
-    hasShort: hasShort,
-    hasExercise: hasExercise,
-    isExamMode: isExamMode
+      intentCmd.param.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0) : null
   };
 }
 
@@ -874,8 +719,7 @@ function buildAtCommandInstructionText(intentPayload) {
   if (!intentPayload || !intentPayload.intent) return '';
   const intentLabels = {
     chat: 'CHAT — plain conversation, reply with action "chat_reply" only, do NOT edit the document',
-    create_pdf: 'CREATE PDF — create a new document/note. If the user asks for "tick" or MCQ questions, generate them in the professional MCQ format with quiz-container, quiz-item, quiz-question, quiz-options, and quiz-answer-key.',
-    exam: 'EXAM — create an exam paper using the selected exam question types and difficulty level; @Exercise may also be included as a practice component',
+    create_pdf: 'CREATE PDF — create a new document/note.',
     edit: 'EDIT — edit/modify the current canvas content',
     refine: 'REFINE — inspect the requested part and improve it while preserving useful information',
     refine_equation: 'REFINE EQUATION — fix ONLY the equation/KaTeX portions, leave everything else untouched',
@@ -902,14 +746,6 @@ function buildAtCommandInstructionText(intentPayload) {
     parts.push('LENGTH: SHORT — produce a compact document covering only essential concepts and examples. Avoid unnecessary elaboration.');
   }
 
-  if (intentPayload.difficulty === 'easy') {
-    parts.push('DIFFICULTY: EASY — use simple, accessible language and easier questions.');
-  } else if (intentPayload.difficulty === 'standard') {
-    parts.push('DIFFICULTY: STANDARD — use a balanced, moderate exam difficulty level.');
-  } else if (intentPayload.difficulty === 'hard') {
-    parts.push('DIFFICULTY: HARD — use advanced, challenging language and questions.');
-  }
-
   if (intentPayload.pageTarget && intentPayload.intent !== 'edit' && intentPayload.intent !== 'refine_pagination') {
     parts.push(`TARGET PAGE: Apply this action only to page ${intentPayload.pageTarget}. Preserve all other pages exactly as-is.`);
   }
@@ -920,25 +756,6 @@ function buildAtCommandInstructionText(intentPayload) {
 
   if (intentPayload.visual === 'canvas') {
     parts.push('VISUAL SUPPORT: CANVAS — increase useful visual elements (tables, diagrams, concept maps) wherever they genuinely help understanding.');
-  }
-
-  if (intentPayload.contentTypes && intentPayload.contentTypes.length) {
-    const contentLabels = {
-      mcq: 'MCQ (multiple-choice questions)',
-      cq: 'CQ (creative questions)',
-      short_question: 'Short Questions',
-      exercise: 'Practice Exercises'
-    };
-    const contentParts = intentPayload.contentTypes.map(id => {
-      const count = intentPayload.questionCounts ? intentPayload.questionCounts[id] : null;
-      const label = contentLabels[id] || id;
-      return count ? `${label}: ${count}` : label;
-    });
-    parts.push(`CONTENT TYPES TO INCLUDE: ${contentParts.join(', ')}.`);
-  }
-
-  if (intentPayload.isExamMode || intentPayload.hasMcq) {
-    parts.push('MCQ/EXAM MODE ACTIVE: Generate professional MCQ questions using the quiz-container format.');
   }
 
   return `\n\n=== USER EXPLICIT @ COMMAND SELECTION (SOURCE OF TRUTH — follow exactly, do NOT guess intent from free text) ===\nUser explicitly selected: ${parts.join('; ')}.\n=== END @ COMMAND SELECTION ===\n`;
@@ -973,6 +790,3 @@ window.hasSelectedCommand = hasSelectedCommand;
 window.hasDocumentContentForAtCommands = hasDocumentContentForAtCommands;
 window.getPrimaryIntent = getPrimaryIntent;
 window.isDocumentOperationIntent = isDocumentOperationIntent;
-window.getAtCommandById = getAtCommandById;
-window.getCommandsForCategory = getCommandsForCategory;
-window.getCommandCategoryKey = getCommandCategoryKey;
