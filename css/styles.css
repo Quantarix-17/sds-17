@@ -3871,6 +3871,36 @@ body:not(.exam-document) .omr-sheet-page {
   }
 }
 
+/* ============================================================
+   MATH / KATEX EQUATION QUALITY + THEME SUPPORT
+   ============================================================ */
+.katex-eq {
+  line-height: normal;
+}
+.katex-eq[data-display="false"] {
+  vertical-align: middle;
+}
+.katex-eq[data-display="true"] {
+  display: block;
+  margin: 0.85em 0;
+}
+/* Make rendered equations follow the app's text color (KaTeX otherwise
+   ships hard-coded black glyphs, so without this every equation is
+   unreadable on the dark theme). */
+.katex-eq .katex {
+  color: var(--text-primary);
+  font-size: 1.05em;
+}
+.katex-eq .katex .katex-html {
+  color: inherit;
+}
+/* Equation waiting on KaTeX to finish loading / a retry pass */
+.katex-eq[data-render-pending="true"]:not(.katex-render-failed) {
+  opacity: 0.55;
+  filter: saturate(0.7);
+  transition: opacity 0.2s var(--ease);
+}
+
 /* ===== RENDER FAILURE STYLING (RED) ===== */
 .katex-eq.katex-render-failed {
   background-color: #fee2e2 !important;
@@ -3884,4 +3914,15 @@ body:not(.exam-document) .omr-sheet-page {
 .katex-eq.katex-render-failed .katex-fallback {
   color: #dc2626 !important;
   font-weight: 600 !important;
+}
+/* Original failure colors are tuned for a light background; on dark mode
+   the same red-on-light-pink combo loses contrast against the surrounding
+   page, so give it a dark-theme-aware palette. */
+.dark .katex-eq.katex-render-failed {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+  color: #ff8f8f !important;
+  border-color: rgba(252, 165, 165, 0.4) !important;
+}
+.dark .katex-eq.katex-render-failed .katex-fallback {
+  color: #ff8f8f !important;
 }
