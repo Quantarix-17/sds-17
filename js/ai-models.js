@@ -571,6 +571,8 @@ function classifyAIError(err) {
   const emptyOrMalformed = kind === 'empty_response' || kind === 'malformed_response';
   const retryableLocally = !authOrConfig && !unavailable && !quota && (transient || httpRetryable || emptyOrMalformed);
   return { status, detail, kind, quota, unavailable, transient, httpRetryable, authOrConfig, emptyOrMalformed, retryableLocally, shouldFallback: true };
+}
+
 // ============================================================
 // WINDOW EXPOSURE – AI Models
 // ============================================================
@@ -596,4 +598,3 @@ window.markModelSuccess = markModelSuccess;
 window.markModelFailure = markModelFailure;
 window.classifyAIError = classifyAIError;
 window.describeAIErrorForToast = describeAIErrorForToast;
-}
