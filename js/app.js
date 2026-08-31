@@ -699,7 +699,7 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
   }
 }
 
-// ===== BUILD SHARED RULES =====
+// ===== BUILD SHARED RULES (exam formatting removed) =====
 function buildSharedRules(isMonochromeMode, outputLanguage) {
   const labels = outputLanguage === 'en' ? {
     definition: 'Definition:',
@@ -885,46 +885,6 @@ function buildSharedRules(isMonochromeMode, outputLanguage) {
     Inline variables like x, y, z used in a math sense also count — they must be wrapped: $x$, $y$, $z$.
     Never leave raw backslash commands outside delimiters.
 
-    === PROFESSIONAL BOARD-STYLE EXAM PAPER FORMAT — MANDATORY (ONLY WHEN @Exam IS ACTIVE) ===
-    When @Exam is explicitly selected, reproduce the look of a real Bangladesh-board photocopied question paper (dense, print-ready, black-and-white). Target ONE A4 page for a normal request; only spread to more pages when the user explicitly asks for more questions than one page can hold (@long_pdf, or an explicit large count).
-
-    -- HEADER (compact, top of page, always centered) --
-    Emit exactly one <div class="exam-header-block" contenteditable="true"> containing:
-      <div class="exam-header-title">...board/institution/subject title...</div>
-      <div class="exam-header-metaline"><span class="exam-header-time">সময়–XX মিনিট</span><span class="exam-header-marks">পূর্ণমান–XX</span></div>
-    Keep this to 2–3 lines total. The title line must stay centered at the top — do not left-align it or bury it inside another block. Do not add name/roll/section blanks for this board-paper format — it is a printed original paper, not a fill-in copy.
-
-    -- NUMBERING RULE (APPLIES TO EVERY SECTION BELOW — CRITICAL) --
-    NEVER write question numbers, option letters, or sub-question letters yourself, in ANY script (no "1.", no "১.", no "(a)", no "(ক)", no "i.", nothing) at the start of a question/option/sub-item. The CSS automatically numbers every <div class="quiz-item">, <div class="quiz-option">, <div class="cq-item">, <div class="cq-subitem"> and <div class="short-q-item"> — writing your own number/letter on top of that produces duplicated numbering like "1.১". Question/option/sub-item text must start directly with the actual content, nothing else.
-
-    -- SECTION 1: MCQ, THREE DENSE COLUMNS --
-    Wrap ALL MCQs in one <div class="quiz-container">.
-    Each question is one <div class="quiz-item"> containing exactly one <div class="quiz-question"> (the stem, no leading number) and one <div class="quiz-options"> with exactly FOUR <div class="quiz-option"> choices (no leading letter).
-    Keep each question stem and its four options together as one unit; never split a question across columns/pages.
-    Write options as short, natural phrases — the CSS lays the three columns out and wraps options inline/stacked automatically; do not add manual grids or line breaks.
-    This section renders in three narrow print columns (like the reference board paper), so keep question stems and options concise — this is what lets ~25–30 questions sit per column.
-    After ALL MCQs, include one <div class="quiz-answer-key"><div class="quiz-answer-title">উত্তরমালা / Answer Key</div><div class="quiz-answer-grid">...</div></div> with exactly one <div class="quiz-answer-item"> per question, using the correct option letter. Keep this compact (small text) — it is a printed answer strip, not a highlighted callout. The app automatically forces this Answer Key onto its own fresh page — you do not need to add any page-break markup yourself, just place it right after the quiz-container.
-    Never output MCQs as Markdown tables, loose numbered text, JSON, or plain letter lines.
-
-    -- SECTION 2: CREATIVE QUESTIONS (সৃজনশীল), THREE COLUMNS --
-    Only include this section if the user asked for creative/CQ questions (@CQ) or a full board-style paper.
-    Start with <div class="exam-section-title">সৃজনশীল প্রশ্ন</div>.
-    Wrap the creative questions in one <div class="cq-container">. Each is one <div class="cq-item"> laid out one-per-column (three columns → three creative questions visible side by side; more wrap to the next row).
-    Each <div class="cq-item"> may contain an optional short <div class="cq-stem">...উদ্দীপক...</div> and MUST contain <div class="cq-subquestions"> with exactly four sub-parts in order (জ্ঞান, অনুধাবন, প্রয়োগ, উচ্চতর দক্ষতা), each a <div class="cq-subitem"><span class="cq-marks">১</span> ...question text, no leading ক/খ/গ/ঘ...</div> — the CSS supplies the ক)/খ)/গ)/ঘ) labels automatically from position, only the marks number and question text are yours to write (adjust mark values to what the user specifies, default ১+২+৩+৪). Keep every sub-question short — this section must stay compact enough to share the page with the MCQ section.
-
-    -- SECTION 3: SHORT QUESTIONS + ANSWER SHEET, SIDE BY SIDE --
-    Only include this section if the user asked for short questions (@Short Question) or a full board-style paper.
-    Output ONLY the left side yourself: <div class="short-q-list"> containing <div class="short-q-item"> entries (no leading number), each a brief short-answer question. Keep the list short (a handful of items) so it fits one column's height.
-    Do NOT hand-build any OMR/answer-bubble grid — the app automatically generates the OMR sheet and places it beside your short-question list. Just emit the short-q-list; nothing more for this section.
-
-    -- PAGE-BREAK RULE --
-    The Answer Key always belongs on its own fresh page, after everything else (MCQ, CQ, short-question/OMR strip) — the app enforces this page break automatically, so just place <div class="quiz-answer-key"> last in your output and do not try to force page breaks yourself elsewhere.
-
-    -- GENERAL EXAM-PAPER RULES --
-    Treat any diagrams inside an exam paper as black-and-white line art only (no color fills) — outline strokes, no shaded regions.
-    Only emit sections the user actually asked for: MCQ-only requests should contain just the header + quiz-container (+ answer key); do not invent CQ or short-question sections that were not requested.
-    IMPORTANT: Do NOT include MCQ/CQ/exam content of any kind UNLESS the user explicitly selected @Exam command.
-
     === ABSOLUTE BAN ON CODING / DECISION FLOWCHARTS ===
     NEVER generate coding or algorithmic flowcharts (NO IF/ELSE, NO "Yes/No" labels). For "flowchart", generate a clean "Sequential Step-by-Step Process Flow".
 
@@ -996,7 +956,7 @@ function buildAttachmentContextForAI(promptText, shouldUseMemory, intentPayload)
   const attachedEntries = Object.entries(APP_STATE.attachedFiles || {});
   if (!attachedEntries.length) return '';
   const explicitFileRef = isFileReferencedRequest(promptText);
-  const forceForDocumentCreation = !!(intentPayload && ['create_pdf', 'exam'].includes(intentPayload.intent));
+  const forceForDocumentCreation = !!(intentPayload && ['create_pdf'].includes(intentPayload.intent));
   const includeAll = shouldUseMemory || explicitFileRef || forceForDocumentCreation;
   if (!includeAll) return '';
   const blocks = [];
@@ -1290,7 +1250,7 @@ async function generateNextSection(sectionIndex, sectionTitle, modelsUsedSet) {
     forceJson: !deepSeekMode,
     modelsUsedSet,
     modelConfig: lockedCfg || undefined,
-    maxTokens: undefined // No limit
+    maxTokens: undefined
   });
   if (result && result.modelConfig) _generationLockedModelConfig = result.modelConfig;
 
@@ -1588,16 +1548,13 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
   }
 }
 
-// ===== GENERATE DEFAULT PDF DIRECT MODE (UPDATED: Enhanced MCQ instruction) =====
+// ===== GENERATE DEFAULT PDF DIRECT MODE (no exam) =====
 async function generateDefaultPDFDirectMode(promptText, fileContextString, isMonochromeMode, isEmptyCanvas, isReplaceIntent, modelsUsedSet, intentPayload) {
   const outputLanguage = intentPayload?.language || detectOutputLanguage(promptText);
   const existingHTML = (!isEmptyCanvas && !isReplaceIntent) ? (typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '') : '';
   const currentText = existingHTML ? (typeof getCanvasContentWithLatexSource === 'function' ? getCanvasContentWithLatexSource() : '') : '';
   const requestSessionId = APP_STATE.activeSessionId;
   const activeCfg = _generationLockedModelConfig || undefined;
-
-  // Detect MCQ from prompt or intent
-  const isMcqRequest = intentPayload?.hasMcq || intentPayload?.contentTypes?.includes('mcq') || /(MCQ|mcq|টিক|multiple choice|বহুনির্বাচনী|প্রশ্ন|উত্তর|exam|পরীক্ষা)/i.test(promptText);
 
   const systemPrompt =
     `You are the dedicated DEFAULT PDF document generator for AI PDF Studio.\n` +
@@ -1606,20 +1563,6 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: null, language: outputLanguage, sectionMode: false }) : ''}\n` +
     `DEFAULT DIRECT RULES: create the complete requested document in one continuous generation flow. Follow the user's requested scope, depth and detail. There is no fixed page target. Do not intentionally compress a detailed request, and do not pad a simple request. Use natural headings, definitions, explanations, formulas, worked examples, tables and useful visuals where they materially improve the document.\n` +
-    (isMcqRequest ? `
-    === MCQ GENERATION MODE ACTIVE ===
-    The user has requested MCQ ("tick") questions. You MUST generate the questions as a document, not just answers.
-    - Create a document with a title, then a <div class="quiz-container"> (this renders as a dense three-column board-paper layout — keep stems/options concise).
-    - Inside quiz-container, create exactly 20 <div class="quiz-item"> elements (or the number requested).
-    - Each quiz-item must contain a <div class="quiz-question"> (the question stem) and a <div class="quiz-options">.
-    - The quiz-options must contain exactly four <div class="quiz-option"> elements for options — do not add manual A/B/C/D labels, the CSS supplies them.
-    - After all questions, include a <div class="quiz-answer-key"> with the correct answers.
-    - If the user asks for explanations ("বিশ্লেষণ"), include a separate section after the answer key with explanations for each answer.
-    - Do NOT produce only answers without the questions. The document must contain the questions first.
-    - Do NOT output any conversational text. Only the document HTML.
-    ` : `
-    IMPORTANT: If the user did NOT ask for MCQ/exam questions, generate a regular study note/document without any MCQ.
-    `) +
     `OUTPUT SAFETY: the result must contain substantial visible explanatory content, not just a title or outline. Use semantic HTML suitable for the existing A4 pagination engine.`;
 
   const userPrompt =
@@ -1669,25 +1612,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     if (generated && generated.startsWith('{') && generated.includes('"action"')) {
       const parsedJson = safeParseAIJson(generated, null);
       if (parsedJson && parsedJson.action === 'chat_reply' && parsedJson.message) {
-        // If AI returned chat_reply, try to convert the message to HTML, but if it's just text, we'll force re-generation with stronger instruction.
-        // For MCQ, we want to force a full document, so we'll retry.
-        if (isMcqRequest) {
-          // Retry with an even stronger instruction
-          const retryPrompt = `You MUST generate a complete document containing the requested MCQ questions. Do not just provide answers. Return HTML with quiz-container.`;
-          const retryResult = await callAIAPI([{ role: 'system', content: systemPrompt + `\nDO NOT use chat_reply. Always output document HTML.` }, { role: 'user', content: retryPrompt + '\n\n' + userPrompt }], {
-            forceJson: false,
-            modelsUsedSet,
-            modelConfig: result?.modelConfig || _generationLockedModelConfig || activeCfg,
-            maxTokens: undefined
-          });
-          if (retryResult && retryResult.modelConfig) _generationLockedModelConfig = retryResult.modelConfig;
-          const retryHTML = extractHTML(retryResult);
-          if (usableTextLength(retryHTML) > usableTextLength(generated)) {
-            generated = retryHTML;
-          }
-        } else {
-          generated = convertTextToDocumentHTML(parsedJson.message);
-        }
+        generated = convertTextToDocumentHTML(parsedJson.message);
       }
     }
 
@@ -1786,7 +1711,6 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
     `${buildSharedRules(isMonochromeMode, outputLanguage)}\n` +
     `${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText({ intent: 'create_pdf', length: isLong ? 'long_pdf' : 'short_pdf', language: outputLanguage, sectionMode: false }) : ''}\n` +
     (isLong ? `LONG DIRECT RULES: write a genuinely comprehensive document. Cover the full requested scope with definitions, concepts, formulas, properties, examples, applications, comparisons, common mistakes, summaries and useful tables/diagrams where appropriate. Do not intentionally compress the content. The document should naturally produce ${minPages}+ A4 pages when the topic supports it. Never pad with repetition.\n` : `SHORT DIRECT RULES: produce a compact but complete document, normally about 2–5 A4 pages. Preserve the essential concepts, key formulas/facts, representative examples and a concise summary. Do not return only a title or outline.\n`) +
-    `IMPORTANT: Do NOT include MCQ, quiz, or exam-style content unless the user explicitly selected @Exam command. If the user did not select @Exam, generate a regular study note/document without any MCQ.\n` +
     `OUTPUT SAFETY: the result must contain substantial visible explanatory content. Use semantic HTML suitable for the existing A4 pagination engine.\n`;
 
   const userPrompt =
@@ -2220,7 +2144,7 @@ async function handleRefineAction(promptText, intentPayload, pageContext, models
 }
 
 // ============================================================
-// MAIN CHAT FUNCTION (UPDATED with MCQ detection from prompt)
+// MAIN CHAT FUNCTION (no exam/MCQ auto-detection)
 // ============================================================
 
 async function sendChatPromptToAI() {
@@ -2232,26 +2156,6 @@ async function sendChatPromptToAI() {
 
     let promptText = typeof parseAndStripInlineCommandTokens === 'function' ? parseAndStripInlineCommandTokens(rawInputValue).trim() : rawInputValue.trim();
     if (!promptText) promptText = APP_STATE.selectedCommands.length > 0 ? 'Apply the selected @ command settings.' : '';
-
-    // --- Auto-detect MCQ from prompt text ---
-    const mcqKeywords = /(MCQ|mcq|টিক|multiple choice|বহুনির্বাচনী|প্রশ্ন|উত্তর|exam|পরীক্ষা)/i;
-    if (mcqKeywords.test(promptText) && !APP_STATE.selectedCommands.some(c => c.id === 'mcq')) {
-      const mcqCmd = getAtCommandById('mcq');
-      if (mcqCmd) {
-        // Extract number from prompt (like ২০, 20)
-        let count = 20;
-        const numMatch = promptText.match(/(\d+|২০|৩০|৪০|৫০|১০)/);
-        if (numMatch) {
-          const num = parseInt(numMatch[1], 10);
-          if (!isNaN(num) && num > 0) count = num;
-        }
-        attemptAddAtCommand(mcqCmd, String(count));
-        // Ensure exam and create_pdf are added
-        ensureCommandDependencies(mcqCmd, { silent: true });
-        // Rebuild intentPayload
-        intentPayload = buildIntentPayload();
-      }
-    }
 
     let intentPayload = typeof buildIntentPayload === 'function' ? buildIntentPayload() : null;
     if (!intentPayload) {
@@ -2457,20 +2361,20 @@ async function sendChatPromptToAI() {
         return;
       }
 
-      // ========== OTHER INTENTS (Create PDF, Exam, etc.) ==========
-      const legacyIsDocumentRequestGuess = /(write|create|generate|make|add|insert|append|update|rewrite|replace|edit|modify|fix|correct|revise|expand|extend|continue|improve|enhance|change|redo|shorten|summarize|reduce|delete|remove|তৈরি|লেখ|যোগ|সৃষ্টি|আপডেট|পুনর্লিখন|প্রতিস্থাপন|বানান|নোট|প্রশ্ন|MCQ|quiz|পরীক্ষা|চার্ট|সারণী|তালিকা|ফ্লো চার্ট|ডায়াগ্রাম|ঠিক কর|সংশোধন|সংশোধিত|সংশোধ|সম্পাদনা|পরিবর্তন|পরিবর্তিত|বাড়া|বাড়িয়ে|বাড়াও|কমাও|কমিয়ে|চালিয়ে যাও|মুছ|বাদ দাও|এডিট|মডিফাই)/i.test(promptText) && !/^(hi|hello|hey|thanks|thank you|ok|okay|সুপ্রভাত|ধন্যবাদ|ঠিক আছে|আচ্ছা)\s*[.!?]*$/i.test(promptText.trim());
+      // ========== OTHER INTENTS (Create PDF, etc.) ==========
+      const legacyIsDocumentRequestGuess = /(write|create|generate|make|add|insert|append|update|rewrite|replace|edit|modify|fix|correct|revise|expand|extend|continue|improve|enhance|change|redo|shorten|summarize|reduce|delete|remove|তৈরি|লেখ|যোগ|সৃষ্টি|আপডেট|পুনর্লিখন|প্রতিস্থাপন|বানান|নোট|প্রশ্ন|চার্ট|সারণী|তালিকা|ফ্লো চার্ট|ডায়াগ্রাম|ঠিক কর|সংশোধন|সংশোধিত|সংশোধ|সম্পাদনা|পরিবর্তন|পরিবর্তিত|বাড়া|বাড়িয়ে|বাড়াও|কমাও|কমিয়ে|চালিয়ে যাও|মুছ|বাদ দাও|এডিট|মডিফাই)/i.test(promptText) && !/^(hi|hello|hey|thanks|thank you|ok|okay|সুপ্রভাত|ধন্যবাদ|ঠিক আছে|আচ্ছা)\s*[.!?]*$/i.test(promptText.trim());
 
       const isDocumentRequest = intentPayload.intent !== 'chat' ? (intentPayload.intent ? true : legacyIsDocumentRequestGuess) : false;
       APP_STATE.suppressDocumentAIChat = !!isDocumentRequest;
 
       const sectionModeEnabled = getSectionModeEnabled();
       const intentForcesExplicitLengthDirect = intentPayload.intent === 'create_pdf' && (intentPayload.length === 'long_pdf' || intentPayload.length === 'short_pdf');
-      const intentForcesStepByStep = !intentForcesExplicitLengthDirect && sectionModeEnabled && intentPayload.intent !== 'exam' && intentPayload.length === 'long_pdf';
+      const intentForcesStepByStep = !intentForcesExplicitLengthDirect && sectionModeEnabled && intentPayload.length === 'long_pdf';
       const intentForcesSingleShot = intentPayload.intent === 'chat' || intentPayload.intent === 'refine_pagination' || intentPayload.pageTarget || intentForcesExplicitLengthDirect;
       const intentForcesDefaultDirect = intentPayload.intent === 'create_pdf' && !intentForcesExplicitLengthDirect && (intentPayload.length === null || intentPayload.length === 'standard' || !intentPayload.length);
 
       let precomputedGenerationPlan = null;
-      if (sectionModeEnabled && !intentForcesDefaultDirect && !intentForcesExplicitLengthDirect && !intentForcesSingleShot && intentPayload.intent !== 'exam' && isDocumentRequest && (!intentPayload.length || intentPayload.length === 'standard')) {
+      if (sectionModeEnabled && !intentForcesDefaultDirect && !intentForcesExplicitLengthDirect && !intentForcesSingleShot && isDocumentRequest && (!intentPayload.length || intentPayload.length === 'standard')) {
         if (typeof ProgressUI !== 'undefined' && ProgressUI.show) ProgressUI.show('Planning document scope...', 'AI is estimating depth and generation strategy...');
         precomputedGenerationPlan = await generateTopicPlan(promptText, fileContextString, isMonochromeMode, intentPayload, modelsUsed);
       }
@@ -2550,7 +2454,6 @@ async function sendChatPromptToAI() {
 
       const systemPrompt =
         `You are an AI Document Assistant. MODE: ${isMonochromeMode ? 'MONOCHROME' : 'COLORFUL'}.\n${typeof buildSharedRules === 'function' ? buildSharedRules(isMonochromeMode, outputLanguageSingle || 'en') : ''}${strategyContextSingle}\n` +
-        `CRITICAL INSTRUCTION FOR MCQ: Follow the mandatory board-style exam paper format from the shared rules exactly (quiz-container/quiz-item/quiz-question/quiz-options/quiz-option structure, plus cq-container and short-q-list when those sections are requested). Do not invent alternative markup or a two-column question-stem layout. IMPORTANT: Only include MCQ/CQ/short-question content if the user explicitly selected @Exam. For regular document generation, NEVER include this content.\n` +
         `CRITICAL INSTRUCTION FOR FLOWCHARTS: NEVER EVER create decision branches with "Yes" / "No" labels or coding logic. Generate simple step-by-step process flow.\n` +
         `JSON STRUCTURE OPTIONS:\n1. Append (Add to end): {"action": "append_content", "html_content": "...", "chat_summary": "..."}\n2. Update Specific Section: {"action": "update_section", "target_heading": "Exact Heading from Canvas", "new_html": "...", "chat_summary": "..."}\n3. Prepend (Add to top): {"action": "prepend_content", "html_content": "...", "chat_summary": "..."}\n4. Replace ALL: {"action": "replace_all", "html_content": "...", "chat_summary": "..."}\n5. Update ONE specific page: {"action": "update_page", "page_number": <integer>, "new_html": "...", "chat_summary": "..."}\n6. Update MULTIPLE pages: {"action": "update_pages", "updates": [{"page_number": 1, "new_html": "..."}], "chat_summary": "..."}\n7. Just reply: {"action": "chat_reply", "message": "..."}\n${headingWarningSingle}${typeof buildAtCommandInstructionText === 'function' ? buildAtCommandInstructionText(intentPayload) : ''}`;
 
@@ -2702,7 +2605,7 @@ async function sendChatPromptToAI() {
             chatReplyMessage = `⚠️ Page ${parsedJson.page_number} not found — no changes made.`;
             if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', chatReplyMessage);
           }
-        } else if (parsedJson.message && /<(h[1-3]|table|div class="(block-|quiz-|fc-)|ul|ol)[\s>]/i.test(parsedJson.message)) {
+        } else if (parsedJson.message && /<(h[1-3]|table|div class="(block-|fc-)|ul|ol)[\s>]/i.test(parsedJson.message)) {
           if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
           if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(isCanvasEmpty ? parsedJson.message : currentFullHTML + "<br><br>" + parsedJson.message);
           chatReplyMessage = parsedJson.chat_summary || "✅ Content added!";
@@ -2718,10 +2621,8 @@ async function sendChatPromptToAI() {
       }
 
       if (documentWasUpdated) {
-        if (intentPayload.intent !== 'exam') document.body.classList.remove('exam-document');
         if (typeof repairEquationsInNewContent === 'function') await repairEquationsInNewContent(modelsUsed);
         if (typeof checkForDuplicateHeadings === 'function') checkForDuplicateHeadings();
-        if (intentPayload.intent === 'exam' && typeof finalizeExamDocumentIfNeeded === 'function') finalizeExamDocumentIfNeeded();
       }
 
       if (documentWasUpdated && chatReplyMessage && typeof appendChatMessageToUI === 'function') {
