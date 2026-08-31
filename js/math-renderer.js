@@ -69,12 +69,51 @@ const KNOWN_LATEX_COMMANDS = new Set([
     'cdots','ldots','vdots','ddots','dots',
     'pmod','bmod','not',
     'langle','rangle','lceil','rceil','lfloor','rfloor','vert','Vert','mid',
-    'ext','extker','extrange'
+    'ext','extker','extrange',
+    // Additional commonly-needed commands (arrows, decorations, big operators, misc)
+    'boxed','overset','underset','stackrel','substack',
+    'xrightarrow','xleftarrow','xLeftarrow','xRightarrow','xleftrightarrow','xLeftrightarrow',
+    'hookrightarrow','hookleftarrow','rightharpoonup','leftharpoonup','rightharpoondown','leftharpoondown',
+    'rightleftharpoons','leftrightharpoons','rightrightarrows','leftleftarrows',
+    'nearrow','searrow','swarrow','nwarrow','leadsto','curvearrowright','curvearrowleft',
+    'bigl','bigr','Bigl','Bigr','biggl','biggr','Biggl','Biggr',
+    'colon','because','therefore','ldotp','cdotp','backslash','surd',
+    'iiiint','oiint','oiiint','idotsint',
+    'nonumber','notag','tag','label','ref','eqref',
+    'sideset','mathring','check','breve','acute','grave',
+    'square','blacksquare','lozenge','blacklozenge','diamond','Diamond',
+    'triangleleft','triangleright','blacktriangle','blacktriangleleft','blacktriangleright',
+    'trianglelefteq','trianglerighteq','ntriangleleft','ntriangleright',
+    'subsetneq','supsetneq','subsetneqq','supsetneqq','sqsubset','sqsupset','sqsubseteq','sqsupseteq',
+    'sqcup','sqcap','uplus','biguplus','bigsqcup',
+    'nsubseteq','nsupseteq','nless','ngtr','nleq','ngeq',
+    'longmapsto','circlearrowleft','circlearrowright','looparrowleft','looparrowright',
+    'digamma','varkappa','beth','gimel','daleth','complement',
+    'imath','jmath','eth','hslash','backepsilon',
+    'mathbbm','mathnormal','textnormal','emph','textbf','textit',
+    'array','matrix','pmatrix','bmatrix','Bmatrix','vmatrix','Vmatrix','smallmatrix'
 ]);
 
 function isKnownLatexCommand(cmd) {
     if (!cmd) return false;
     return KNOWN_LATEX_COMMANDS.has(String(cmd));
+}
+
+// ===== REBUILD A LATEX COMMAND STRING FROM PARSED ARGS =====
+// Optional arguments (e.g. the "[3]" in \sqrt[3]{x}) must be re-emitted with
+// square brackets, NOT wrapped in curly braces, or KaTeX sees an extra
+// mandatory argument and mis-renders the command (this previously broke
+// every \sqrt[n]{...} nth-root).
+function buildLatexFromCommand(cmd, args) {
+    let latex = '\\' + cmd;
+    for (const arg of args) {
+        if (arg.length >= 2 && arg[0] === '[' && arg[arg.length - 1] === ']') {
+            latex += arg;
+        } else {
+            latex += '{' + arg + '}';
+        }
+    }
+    return latex;
 }
 
 // ===== KATEX READY HELPER =====
@@ -258,13 +297,7 @@ function processMathEquationsInContainer(container) {
                 // Check if this is a known LaTeX command (we want to wrap it)
                 if (isKnownLatexCommand(cmd)) {
                     // Build the full LaTeX string: \cmd + args
-                    let latex = '\\' + cmd;
-                    if (args.length) {
-                        for (const arg of args) {
-                            latex += '{' + arg + '}';
-                        }
-                    }
-                    // Add any trailing whitespace? We'll keep it.
+                    const latex = buildLatexFromCommand(cmd, args);
                     // Insert preceding text
                     if (startPos > last) {
                         fragment.appendChild(document.createTextNode(text.slice(last, startPos)));
@@ -366,9 +399,16 @@ function processMathEquationsToHTML(rawHtmlString) {
 function normalizeEquationLatexSource(latex) {
     let value = String(latex || '').trim();
     if (!value) return '';
-    // Collapse accidental double-escaping from JSON / AI output, but keep real commands
-    value = value.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
-    value = value.replace(/\\\\/g, '\\');
+    // Collapse accidental double-escaping from JSON / AI output (e.g. "\\\\alpha"
+    // arriving as "\\alpha" instead of "\alpha"), but ONLY when the resulting
+    // command is a real, known LaTeX command. A blanket "\\\\ -> \\" collapse
+    // (the previous behavior) also matches the legitimate "\\\\" row-break used
+    // inside \begin{matrix}/\begin{cases}/\begin{aligned} environments and
+    // silently corrupts every multi-line equation, so we never touch a double
+    // backslash unless it is clearly an over-escaped command name.
+    value = value.replace(/\\\\([A-Za-z]+)/g, (full, cmd) => (isKnownLatexCommand(cmd) ? '\\' + cmd : full));
+    // Same idea for over-escaped special characters (\\\\% , \\\\$ , \\\\& , ...)
+    value = value.replace(/\\\\([%$&_{}#])/g, '\\$1');
     // Remove surrounding delimiters if present
     value = value.replace(/^\$\$([\s\S]*?)\$\$$/, '$1').trim();
     value = value.replace(/^\\\[([\s\S]*?)\\\]$/, '$1').trim();
@@ -410,12 +450,7 @@ function appendAutoWrappedLatex(fragment, textPart) {
                 fragment.appendChild(document.createTextNode(textPart.slice(last, startPos)));
             }
             // Build the LaTeX string
-            let latex = '\\' + cmd;
-            if (args.length) {
-                for (const arg of args) {
-                    latex += '{' + arg + '}';
-                }
-            }
+            const latex = buildLatexFromCommand(cmd, args);
             // Create the math span
             fragment.appendChild(createKatexSpanElement(latex, false));
             last = endPos;
@@ -495,10 +530,22 @@ function renderKatexSpanWithRecovery(spanElement, force = false) {
             katex.render(latexString, spanElement, {
                 throwOnError: false,
                 displayMode: isDisplayMode,
-                trust: true,
+                // Restrict "trust" instead of allowing it blanket: math content
+                // in this app comes from AI output, and \href/\includegraphics
+                // with an arbitrary (e.g. "javascript:") URL is an XSS vector.
+                // Only allow http(s) links; everything else (raw HTML embeds,
+                // \includegraphics, etc.) stays untrusted.
+                trust: (context) => {
+                    if (context.command === '\\href' || context.command === '\\url') {
+                        return /^https?:\/\//i.test(String(context.url || ''));
+                    }
+                    return false;
+                },
                 strict: 'ignore',
                 output: 'htmlAndMathml',
-                macros: macros
+                macros: macros,
+                maxSize: 25,
+                maxExpand: 1000
             });
             if (spanElement.querySelector('.katex') && !spanElement.querySelector('.katex-error')) {
                 spanElement.setAttribute('data-latex', latexString);
@@ -715,3 +762,4 @@ window.waitForKatex = waitForKatex;
 window.isKatexSpanBroken = isKatexSpanBroken;
 window.getCustomKaTeXMacros = getCustomKaTeXMacros;
 window.isKnownLatexCommand = isKnownLatexCommand;
+window.buildLatexFromCommand = buildLatexFromCommand;
