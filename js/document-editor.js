@@ -6,6 +6,54 @@
 const docContainer = document.getElementById('document-view-container');
 const chatHistoryArea = document.getElementById('chat-history');
 
+// ============================================================
+// PAGE CONTENT VALIDATION (FIXED: ignores whitespace-only nodes)
+// ============================================================
+function pageHasContent(page) {
+  if (!page) return false;
+  const clone = page.cloneNode(true);
+  // Remove footer elements
+  clone.querySelectorAll('.page-footer-number').forEach(f => f.remove());
+  
+  // Get clean text without excessive whitespace
+  const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
+  
+  // Check for visual elements
+  const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution, .quiz-container');
+  
+  // Require at least 2 meaningful characters OR a visual element
+  // This fixes the "blank second page" bug where whitespace-only nodes were treated as content
+  const hasMeaningfulText = text.length >= 2;
+  
+  return hasMeaningfulText || hasVisual;
+}
+
+function _removeTrailingEmptyPages() {
+  if (!docContainer) return;
+  const pages = Array.from(docContainer.querySelectorAll('.doc-page-canvas'));
+  if (pages.length <= 1) return;
+  
+  let removedCount = 0;
+  // Iterate backwards to safely remove pages
+  for (let i = pages.length - 1; i >= 0; i--) {
+    const page = pages[i];
+    // Skip the first page even if empty (keep at least one page)
+    if (i === 0) continue;
+    
+    if (!pageHasContent(page)) {
+      page.remove();
+      removedCount++;
+    }
+  }
+  
+  if (removedCount > 0) {
+    updatePageFooters();
+    if (typeof displayToastNotification === 'function') {
+      displayToastNotification(`🧹 Removed ${removedCount} empty page(s)`);
+    }
+  }
+}
+
 // ===== HISTORY (Undo/Redo) =====
 const HISTORY = {
   undoStack: [],
@@ -81,7 +129,7 @@ function getAllCanvasHTML() {
   return combinedHTML;
 }
 
-// ===== SET DOCUMENT HTML WITH PAGINATION =====
+// ===== SET DOCUMENT HTML WITH PAGINATION (FIXED: removes empty trailing pages) =====
 let autoSaveTimer = null;
 let paginationDebounceTimer = null;
 
@@ -293,6 +341,10 @@ function setDocumentHTMLAndPaginate(rawHtml, triggerSave = true) {
   normalizeAllEditorPagesToA4();
   docContainer.scrollTop = savedScrollPos;
   restoreCaretPosition(markerId);
+  
+  // ===== FIX: Remove empty trailing pages =====
+  _removeTrailingEmptyPages();
+  
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
   if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
   if (typeof enforceDiagramVisualStyles === 'function') enforceDiagramVisualStyles(docContainer);
@@ -385,6 +437,8 @@ function reflowDocument() {
     pageIndex++;
   }
   normalizeAllEditorPagesToA4();
+  // Remove empty trailing pages after reflow
+  _removeTrailingEmptyPages();
   restoreCaretPosition(markerId);
   HISTORY.saveState();
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
@@ -448,12 +502,8 @@ function tightenPageContentToA4(page) {
   const contentNodes = Array.from(page.childNodes).filter(n => n !== footer);
   if (!contentNodes.length) return true;
 
-  // Normal body text only ever gets tried at 12pt then 10pt (Word-style sizing) — never
-  // an in-between/continuous scale. Figures, images and tables can still shrink below,
-  // since resizing those is fine; only the text size itself is now capped to these two
-  // values.
   for (const pt of EDITOR_A4_TEXT_SIZES_PT) {
-    const scale = pt / 12; // used only to size non-text elements (media/tables) below
+    const scale = pt / 12;
     page.style.fontSize = pt + 'pt';
     page.style.lineHeight = String(pt >= 12 ? 1.6 : 1.5);
     page.querySelectorAll('table').forEach(table => {
@@ -475,8 +525,6 @@ function tightenPageContentToA4(page) {
       return true;
     }
   }
-  // Still doesn't fit at 10pt: stop shrinking text further (per the rule above) and let
-  // pagination spill the remainder onto a continuation page instead.
   page.dataset.oversized = 'true';
   return false;
 }
@@ -522,7 +570,7 @@ function updatePageFooters() {
   if (typeof fitEditorPagesToScreen === 'function') fitEditorPagesToScreen();
 }
 
-// ===== FIT EDITOR PAGES TO SCREEN (UNCHANGED) =====
+// ===== FIT EDITOR PAGES TO SCREEN =====
 let _fitEditorTimer = null;
 
 function scheduleFitEditor() {
@@ -632,6 +680,12 @@ if (!window.__editorFitResizeBound) {
   setTimeout(scheduleFitEditor, 1000);
 }
 
+// ===== GET PAGE COUNT =====
+function getPageCount() {
+  if (!docContainer) return 0;
+  return docContainer.querySelectorAll('.doc-page-canvas').length;
+}
+
 // ===== UPDATE PAGE BY NUMBER =====
 function updateSpecificPageByNumber(pageNumber, newHtml) {
   const pageNum = Number.parseInt(pageNumber, 10);
@@ -663,6 +717,8 @@ function updateSpecificPageByNumber(pageNumber, newHtml) {
     }
 
     updatePageFooters();
+    // Remove any resulting empty trailing pages
+    _removeTrailingEmptyPages();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
     if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
@@ -698,6 +754,7 @@ function updateSpecificPagesByNumber(updates) {
       if (page.scrollHeight > EDITOR_A4_HEIGHT + 1) tightenPageContentToA4(page);
     });
     updatePageFooters();
+    _removeTrailingEmptyPages();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
     if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
@@ -769,6 +826,7 @@ function updateSpecificSectionByHeading(targetHeading, newHtml) {
     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(docContainer);
     if (typeof paginateDocumentCanvas === 'function') paginateDocumentCanvas();
     updatePageFooters();
+    _removeTrailingEmptyPages();
     if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
     if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
     return true;
@@ -853,6 +911,7 @@ function removeCurrentPage() {
     sel.addRange(range);
   }
   updatePageFooters();
+  _removeTrailingEmptyPages();
   if (typeof displayToastNotification === 'function') displayToastNotification(`🗑️ Page ${index + 1} removed.`);
   HISTORY.saveState();
 }
@@ -1056,6 +1115,7 @@ function replaceExistingDiagramBlock(targetElement, newHtml) {
   if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(docContainer);
   paginateDocumentCanvas();
   updatePageFooters();
+  _removeTrailingEmptyPages();
   if (typeof forceRenderAllEquations === 'function') forceRenderAllEquations();
   if (typeof scheduleEquationRecovery === 'function') scheduleEquationRecovery(180);
   return true;
@@ -1101,7 +1161,7 @@ function isDiagramEditRequest(promptText, intentPayload) {
     !!(intentPayload && ['edit', 'refine'].includes(intentPayload.intent));
 }
 
-// ===== BEAUTIFY HELPERS (local no-AI polish) =====
+// ===== BEAUTIFY HELPERS =====
 function textContentLengthFromHTML(html) {
   const t = document.createElement('div');
   t.innerHTML = html || '';
@@ -1306,7 +1366,7 @@ Return ONLY the JSON array, no other text.`;
   }
 }
 
-// ===== BEAUTIFY DOCUMENT (MODIFIED with incremental fix) =====
+// ===== BEAUTIFY DOCUMENT =====
 async function beautifyDocument(options = {}) {
   const currentFullHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
   if (!currentFullHTML || currentFullHTML.includes('Start typing here')) {
@@ -1594,6 +1654,7 @@ async function repairEquationsInNewContent(modelsUsedSet) {
       if (i % 6 === 5) await new Promise(r => setTimeout(r, 0));
     }
     if (touched) updatePageFooters();
+    _removeTrailingEmptyPages();
   } catch (e) {
     console.warn('Local post-process skipped:', e);
   }
@@ -1741,7 +1802,7 @@ function applyMonochromeDocumentStyles() {
   if (typeof enforceDiagramVisualStyles === 'function') enforceDiagramVisualStyles(docContainer);
 }
 
-// ===== PDF VISUAL FORMAT (background/color theme applied to exported/canvas pages) =====
+// ===== PDF VISUAL FORMAT =====
 const PDF_VISUAL_FORMAT_IDS = ['default', 'aurora', 'editorial', 'midnight', 'blueprint', 'sage'];
 const PDF_TEXT_FORMAT_IDS = ['default', 'academic', 'modern', 'compact'];
 
@@ -1794,6 +1855,9 @@ function choosePDFTextFormat(formatId) {
 // ============================================================
 // WINDOW EXPOSURE – Document Editor
 // ============================================================
+window.pageHasContent = pageHasContent;
+window._removeTrailingEmptyPages = _removeTrailingEmptyPages;
+window.getPageCount = getPageCount;
 window.executeEditorCommand = executeEditorCommand;
 window.paginateDocumentCanvas = paginateDocumentCanvas;
 window.beautifyDocument = beautifyDocument;
