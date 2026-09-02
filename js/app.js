@@ -264,13 +264,19 @@ function attemptRepairAndParse(rawText) {
   let parsed = safeParseAIJson(rawText, null);
   if (parsed) return parsed;
 
-  const latexCommands = ['frac', 'left', 'right', 'times', 'text', 'sqrt', 'sum', 'int', 'cdot', 'pm', 'leq', 'geq',
-    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'lambda', 'mu', 'nu', 'pi', 'rho',
-    'sigma', 'tau', 'phi', 'chi', 'psi', 'omega', 'infty', 'partial', 'nabla', 'in', 'notin', 'subset', 'supset',
-    'cup', 'cap', 'land', 'lor', 'neg', 'equiv', 'approx', 'sim', 'propto', 'neq', 'le', 'ge', 'll', 'gg',
-    'to', 'mapsto', 'longrightarrow', 'rightarrow', 'leftarrow', 'leftrightarrow', 'uparrow', 'downarrow',
-    'updownarrow', 'cdots', 'vdots', 'ddots', 'ldots', 'vec', 'bar', 'hat', 'tilde', 'dot', 'ddot', 'overbrace',
-    'underbrace', 'sqrt', 'root', 'binom', 'choose', 'atop', 'over', 'frac', 'dfrac', 'tfrac', 'cfrac'
+  const latexCommands = ['frac', 'dfrac', 'tfrac', 'cfrac', 'sqrt', 'binom', 'left', 'right', 'text', 'mathrm', 'mathbf', 'mathit', 'mathbb',
+    'operatorname', 'vec', 'overline', 'underline', 'bar', 'hat', 'tilde', 'dot', 'ddot', 'widetilde', 'widehat',
+    'sum', 'prod', 'int', 'iint', 'iiint', 'oint', 'lim', 'log', 'ln', 'exp', 'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+    'arcsin', 'arccos', 'arctan', 'cdot', 'times', 'div', 'pm', 'mp', 'leq', 'geq', 'neq', 'approx', 'equiv', 'sim',
+    'propto', 'infty', 'partial', 'nabla', 'forall', 'exists', 'in', 'notin', 'subset', 'subseteq', 'supset', 'supseteq',
+    'cup', 'cap', 'setminus', 'emptyset', 'to', 'mapsto', 'implies', 'iff', 'rightarrow', 'leftarrow', 'leftrightarrow',
+    'Rightarrow', 'Leftarrow', 'Leftrightarrow', 'uparrow', 'downarrow', 'updownarrow', 'cdots', 'ldots', 'vdots', 'ddots',
+    'dots', 'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta', 'iota', 'kappa',
+    'lambda', 'mu', 'nu', 'xi', 'pi', 'varpi', 'rho', 'sigma', 'varsigma', 'tau', 'upsilon', 'phi', 'varphi', 'chi', 'psi',
+    'omega', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega',
+    'degree', 'circ', 'prime', 'quad', 'qquad', 'hspace', 'vspace', 'boxed', 'mathcal', 'mathscr', 'mathsf', 'mathtt',
+    'pmb', 'cancel', 'overbrace', 'underbrace', 'overset', 'underset', 'substack', 'textbf', 'textit', 'begin', 'end',
+    'cases', 'aligned', 'matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix'
   ];
   const commandPattern = new RegExp(`\\\\(${latexCommands.join('|')})(?![a-zA-Z])`, 'g');
   let repaired = rawText.replace(/(?<!\\)\\(?=[a-zA-Z])/g, '\\\\');
@@ -1054,22 +1060,20 @@ let _originalSystemPrompt = '';
 let _originalUserMessages = [];
 let _generationLockedModelConfig = null;
 
-// ===== LIVE PREVIEW UPDATE HELPER =====
-function _updateLivePreviewFromCurrentDocument() {
+// ===== LIVE PAGE NUMBER UPDATE (NO CONTENT PREVIEW) =====
+function _updateLivePageNumberFromCurrentDocument() {
   try {
     const container = document.getElementById('document-view-container');
     if (!container) return;
     const pages = container.querySelectorAll('.doc-page-canvas');
     if (!pages.length) return;
-    // Get the last page's HTML (the one currently being built)
-    const lastPage = pages[pages.length - 1];
-    const html = lastPage.innerHTML;
     const total = pages.length;
-    if (typeof ProgressUI !== 'undefined' && ProgressUI.updateLivePreview) {
-      ProgressUI.updateLivePreview(html, total, total);
+    const current = total;
+    if (typeof ProgressUI !== 'undefined' && ProgressUI.updateLivePageNumber) {
+      ProgressUI.updateLivePageNumber(current, total);
     }
   } catch (e) {
-    console.warn('Live preview update failed:', e);
+    console.warn('Live page number update failed:', e);
   }
 }
 
@@ -1434,8 +1438,7 @@ async function expandLongDocumentUntilMinimumPages(promptText, modelsUsedSet, mi
       const previousHTML = _accumulatedHTML;
       _accumulatedHTML += html;
       if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(_accumulatedHTML, false);
-      // Update live preview after expansion
-      _updateLivePreviewFromCurrentDocument();
+      _updateLivePageNumberFromCurrentDocument();
       const afterPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
       if (afterPages > APP_CONFIG.LONG_PDF_MAX_PAGES_HARD) {
         _accumulatedHTML = previousHTML;
@@ -1481,8 +1484,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
     const titleHTML = `<h1 style="text-align:center;">${escapeHTML(docTitle.toString())}</h1>`;
     _accumulatedHTML = existingHTML ? existingHTML + '<br><br>' + titleHTML : titleHTML;
     if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(_accumulatedHTML, false);
-    // Update live preview with initial page
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
 
     if (typeof ProgressUI !== 'undefined' && ProgressUI.startStepEstimate) ProgressUI.startStepEstimate(sections.length);
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) ProgressUI.setLabel(`Writing section 1 of ${sections.length}: ${sections[0]}`);
@@ -1516,8 +1518,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
 
         _accumulatedHTML = previousHTML + sectionHtml;
         if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(_accumulatedHTML, false);
-        // Update live preview after each section
-        _updateLivePreviewFromCurrentDocument();
+        _updateLivePageNumberFromCurrentDocument();
 
         if (intentPayload && intentPayload.length === 'long_pdf') {
           const currentPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
@@ -1562,8 +1563,7 @@ async function generateComprehensiveDocumentStepByStep(promptText, fileContextSt
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setLabel) ProgressUI.setLabel('Checking equations & diagrams...');
     if (typeof repairEquationsInNewContent === 'function') await repairEquationsInNewContent(modelsUsedSet);
     _accumulatedHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
-    // Final live preview update
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
 
     if (allSectionsSuccess) {
       if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
@@ -1686,8 +1686,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
     const finalHTML = isEmptyCanvas || isReplaceIntent ? generated : `${existingHTML}<br><br>${generated}`;
     _accumulatedHTML = finalHTML;
     if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(finalHTML, false);
-    // Update live preview
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Finalizing PDF…', 96, 99);
 
     const currentPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
@@ -1707,7 +1706,7 @@ async function generateDefaultPDFDirectMode(promptText, fileContextString, isMon
       if (usableTextLength(moreHTML) >= 300) {
         _accumulatedHTML += moreHTML;
         if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(_accumulatedHTML, false);
-        _updateLivePreviewFromCurrentDocument();
+        _updateLivePageNumberFromCurrentDocument();
       }
     }
 
@@ -1815,8 +1814,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Rendering A4 pages…', 84, 96);
     const finalHTML = existingHTML ? `${existingHTML}<br><br>${generated}` : generated;
     if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(finalHTML, false);
-    // Update live preview
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Finalizing PDF…', 96, 99);
     if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
 
@@ -1836,7 +1834,7 @@ async function generateExplicitLengthPDFDirectMode(promptText, fileContextString
         if (textLength(moreHTML) > 300) {
           const before = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
           if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(`${before}<br><br>${moreHTML}`, false);
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
           if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
         }
       } catch (expErr) { console.warn(`[${modeLabel} PDF] bounded expansion skipped:`, expErr); }
@@ -1929,7 +1927,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
     baseHTML = keepExisting ? `${existingHTML}<br><br>${generated}` : generated;
     _accumulatedHTML = baseHTML;
     if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(baseHTML, false);
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
     if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Finalizing PDF…', 96, 99);
 
     for (let round = 1; round <= maxRounds; round++) {
@@ -1963,7 +1961,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
       const previous = _accumulatedHTML;
       _accumulatedHTML = previous + moreHTML;
       if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(_accumulatedHTML, false);
-      _updateLivePreviewFromCurrentDocument();
+      _updateLivePageNumberFromCurrentDocument();
       const afterPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
       if (afterPages <= currentPages) {
         _accumulatedHTML = previous;
@@ -1976,7 +1974,7 @@ async function generateLongPDFDirectMode(promptText, fileContextString, isMonoch
     _accumulatedHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
     if (typeof repairEquationsInNewContent === 'function') await repairEquationsInNewContent(modelsUsedSet);
     _accumulatedHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
     const finalPages = document.getElementById('document-view-container')?.querySelectorAll('.doc-page-canvas').length || 0;
     if (finalPages < minPages && typeof displayToastNotification === 'function') {
       displayToastNotification(`Long PDF created ${finalPages} A4 pages. The document was not left title-only; more depth was not safely generated.`);
@@ -2179,14 +2177,13 @@ async function handleRefineAction(promptText, intentPayload, pageContext, models
   if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(container);
   if (typeof invalidatePDFPreviewCache === 'function') invalidatePDFPreviewCache();
   if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
-  // Update live preview after refinement
-  _updateLivePreviewFromCurrentDocument();
+  _updateLivePageNumberFromCurrentDocument();
 
   return { applied, summary };
 }
 
 // ============================================================
-// SPECIAL TEXT COMMAND: "copy" — restyle an attached file's content verbatim
+// SPECIAL TEXT COMMAND: "copy"
 // ============================================================
 function isCopyStyleCommand(rawInputValue) {
   const stripped = typeof parseAndStripInlineCommandTokens === 'function' ?
@@ -2276,7 +2273,7 @@ async function handleCopyStyleCommand(inputField) {
       if (isCanvasEmpty) setDocumentHTMLAndPaginate(html);
       else setDocumentHTMLAndPaginate(currentHTML + '<br><br>' + html);
     }
-    _updateLivePreviewFromCurrentDocument();
+    _updateLivePageNumberFromCurrentDocument();
     if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
     if (typeof invalidatePDFPreviewCache === 'function') invalidatePDFPreviewCache();
 
@@ -2434,7 +2431,7 @@ async function sendChatPromptToAI() {
             if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
             if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Finishing…', 94, 99);
             if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', summary);
-            _updateLivePreviewFromCurrentDocument();
+            _updateLivePageNumberFromCurrentDocument();
           }
           if (typeof ProgressUI !== 'undefined') ProgressUI.finish();
         } catch (editErr) {
@@ -2478,7 +2475,7 @@ async function sendChatPromptToAI() {
           if (result && result.applied) {
             if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', result.summary || '✅ Refinement applied.');
             if (typeof displayToastNotification === 'function') displayToastNotification('✅ Refinement completed.');
-            _updateLivePreviewFromCurrentDocument();
+            _updateLivePageNumberFromCurrentDocument();
           } else {
             throw new Error('Refinement could not be applied.');
           }
@@ -2502,7 +2499,7 @@ async function sendChatPromptToAI() {
         if (loadingElement && loadingElement.isConnected) loadingElement.remove();
         APP_STATE.isAIGenerating = false;
         if (typeof beautifyDocument === 'function') await beautifyDocument({ allowDuringAIGeneration: true });
-        _updateLivePreviewFromCurrentDocument();
+        _updateLivePageNumberFromCurrentDocument();
         APP_STATE.suppressDocumentAIChat = false;
         APP_STATE.isAIGenerating = false;
         document.getElementById('send-message-btn').disabled = false;
@@ -2519,7 +2516,7 @@ async function sendChatPromptToAI() {
         document.getElementById('send-message-btn').disabled = false;
         if (diagramResult && diagramResult.handled) {
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', diagramResult.summary || 'Diagram updated successfully.');
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else {
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', 'Diagram edit/refine could not be applied safely. The existing diagram was left unchanged. Please make the request more specific, such as the page/diagram title.');
         }
@@ -2558,7 +2555,7 @@ async function sendChatPromptToAI() {
         if (directResult && directResult.ok) {
           if (typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', '✅ PDF generated successfully.');
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else if (!directResult || !directResult.aborted) {
           const reason = (directResult && directResult.message) ? directResult.message : 'Unknown error.';
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `PDF generation failed: ${reason}`);
@@ -2577,7 +2574,7 @@ async function sendChatPromptToAI() {
           if (typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (typeof displayToastNotification === 'function') displayToastNotification(`✅ ${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generated.`);
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', `✅ ${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generated successfully.`);
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else {
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `${intentPayload.length === 'long_pdf' ? 'Long' : 'Short'} PDF generation failed before substantive content could be committed.`);
         }
@@ -2597,7 +2594,7 @@ async function sendChatPromptToAI() {
         } else {
           if (success && typeof isMobileDeviceLayout === 'function' && isMobileDeviceLayout() && typeof setMobileView === 'function') setMobileView('editor');
           if (success && typeof displayToastNotification === 'function') displayToastNotification("✅ Note generated!");
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
           if (success && document.getElementById('analytics-toggle')?.checked) {
             try {
               const analytics = typeof computeDocumentAnalytics === 'function' ? await computeDocumentAnalytics(analyticsStart, modelsUsed) : null;
@@ -2727,7 +2724,7 @@ async function sendChatPromptToAI() {
           if (container) container.scrollTop = 0;
           chatReplyMessage = parsedJson.chat_summary || "✅ Content inserted!";
           documentWasUpdated = true;
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else if (parsedJson.action === 'update_section' && parsedJson.target_heading && parsedJson.new_html) {
           if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
           if (typeof updateSpecificSectionByHeading === 'function' && !updateSpecificSectionByHeading(parsedJson.target_heading, parsedJson.new_html)) {
@@ -2737,20 +2734,20 @@ async function sendChatPromptToAI() {
           } else {
             chatReplyMessage = parsedJson.chat_summary || "✅ Section updated!";
             documentWasUpdated = true;
-            _updateLivePreviewFromCurrentDocument();
+            _updateLivePageNumberFromCurrentDocument();
           }
         } else if (parsedJson.action === 'replace_all' && parsedJson.html_content) {
           if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
           if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(parsedJson.html_content);
           chatReplyMessage = parsedJson.chat_summary || "✅ Document generated!";
           documentWasUpdated = true;
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else if ((parsedJson.action === 'append_content' || !parsedJson.action) && parsedJson.html_content) {
           if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
           if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(isCanvasEmpty ? parsedJson.html_content : currentFullHTML + "<br><br>" + parsedJson.html_content);
           chatReplyMessage = parsedJson.chat_summary || "✅ Content added!";
           documentWasUpdated = true;
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else if (parsedJson.action === 'update_pages' && Array.isArray(parsedJson.updates) && parsedJson.updates.length) {
           const expected = intentPayload.intent === 'edit' && Array.isArray(intentPayload.editPages) ? [...intentPayload.editPages].sort((a, b) => a - b) : null;
           const actual = parsedJson.updates.map(u => parseInt(u.page_number, 10)).filter(Number.isInteger).sort((a, b) => a - b);
@@ -2763,7 +2760,7 @@ async function sendChatPromptToAI() {
             if (typeof updateSpecificPagesByNumber === 'function' && updateSpecificPagesByNumber(parsedJson.updates)) {
               chatReplyMessage = parsedJson.chat_summary || '✅ Selected pages updated!';
               documentWasUpdated = true;
-              _updateLivePreviewFromCurrentDocument();
+              _updateLivePageNumberFromCurrentDocument();
             } else {
               chatReplyMessage = '⚠️ Selected page updates could not be applied safely.';
               if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', chatReplyMessage);
@@ -2775,7 +2772,7 @@ async function sendChatPromptToAI() {
           if (pageUpdateApplied) {
             chatReplyMessage = parsedJson.chat_summary || `✅ Page ${parsedJson.page_number} updated!`;
             documentWasUpdated = true;
-            _updateLivePreviewFromCurrentDocument();
+            _updateLivePageNumberFromCurrentDocument();
           } else {
             chatReplyMessage = `⚠️ Page ${parsedJson.page_number} not found — no changes made.`;
             if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', chatReplyMessage);
@@ -2785,7 +2782,7 @@ async function sendChatPromptToAI() {
           if (typeof setDocumentHTMLAndPaginate === 'function') setDocumentHTMLAndPaginate(isCanvasEmpty ? parsedJson.message : currentFullHTML + "<br><br>" + parsedJson.message);
           chatReplyMessage = parsedJson.chat_summary || "✅ Content added!";
           documentWasUpdated = true;
-          _updateLivePreviewFromCurrentDocument();
+          _updateLivePageNumberFromCurrentDocument();
         } else if (parsedJson.message) {
           chatReplyMessage = parsedJson.message;
           if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('ai', chatReplyMessage);
@@ -2799,7 +2796,7 @@ async function sendChatPromptToAI() {
       if (documentWasUpdated) {
         if (typeof repairEquationsInNewContent === 'function') await repairEquationsInNewContent(modelsUsed);
         if (typeof checkForDuplicateHeadings === 'function') checkForDuplicateHeadings();
-        _updateLivePreviewFromCurrentDocument();
+        _updateLivePageNumberFromCurrentDocument();
       }
 
       if (documentWasUpdated && chatReplyMessage && typeof appendChatMessageToUI === 'function') {
@@ -2976,4 +2973,4 @@ window.computeDocumentAnalytics = computeDocumentAnalytics;
 window.formatAnalyticsChatMessage = formatAnalyticsChatMessage;
 window.validateAIActionHandlers = validateAIActionHandlers;
 window.handleRefineAction = handleRefineAction;
-window._updateLivePreviewFromCurrentDocument = _updateLivePreviewFromCurrentDocument;
+window._updateLivePageNumberFromCurrentDocument = _updateLivePageNumberFromCurrentDocument;
