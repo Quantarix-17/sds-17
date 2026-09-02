@@ -15,10 +15,6 @@
   --accent-gradient-soft: linear-gradient(135deg, rgba(87, 81, 232, 0.12) 0%, rgba(192, 38, 211, 0.12) 100%);
   --danger-color: #f0335a;
   --success-color: #16b981;
-  /* Broken-equation indicator (shown when a math formula fails to render). Kept as
-     variables — rather than hardcoded hex values with !important stacked on every
-     property — so this can actually be changed (theme, print mode, a future "pick your
-     own error color" setting, etc.) instead of always forcing the exact same red. */
   --render-failed-bg: #fee2e2;
   --render-failed-color: #dc2626;
   --render-failed-border: #fca5a5;
@@ -1718,8 +1714,6 @@ body.exam-document .doc-page-canvas {
   border-top: 1px solid #111;
   margin: 0 0 6px;
 }
-/* Single compact meta line: time on the left, full marks on the right —
-   matches the top strip of a real board question paper. */
 .exam-header-metaline {
   display: flex;
   justify-content: space-between;
@@ -1758,8 +1752,6 @@ body.exam-document .doc-page-canvas {
   display: inline-block;
 }
 
-/* Small repeated title shown at the top of the Answer Key's own page —
-   keeps the title centered even though it's no longer the very first block. */
 .exam-answer-page-header {
   border-bottom: 1px solid #111;
   padding: 0 0 4px;
@@ -1769,7 +1761,6 @@ body.exam-document .doc-page-canvas {
   font-size: 12pt;
 }
 
-/* ---- Section title (e.g. "সৃজনশীল প্রশ্ন") between exam sections ---- */
 .exam-section-title {
   font-weight: 800;
   font-size: 11.5pt;
@@ -1782,7 +1773,6 @@ body.exam-document .doc-page-canvas {
   page-break-after: avoid;
 }
 
-/* ---- MCQ / Quiz Container (Photocopy-Style Dense Three-Column Layout) ---- */
 .quiz-container {
   counter-reset: mcq-item;
   margin: 8px 0 0;
@@ -1791,9 +1781,6 @@ body.exam-document .doc-page-canvas {
   line-height: 1.28;
   width: 100%;
 }
-
-/* Three narrow columns for exam documents — matches a photocopied board paper,
-   where each column can hold roughly 25-30 compact questions. */
 body.exam-document .quiz-container {
   column-count: 3;
   column-gap: 12px;
@@ -1802,8 +1789,6 @@ body.exam-document .quiz-container {
   font-size: 8.6pt;
   line-height: 1.28;
 }
-
-/* Each question item */
 .quiz-item {
   counter-increment: mcq-item;
   display: block;
@@ -1814,8 +1799,6 @@ body.exam-document .quiz-container {
   padding: 0;
   border: 0;
 }
-
-/* Question stem */
 .quiz-question {
   font-weight: 700;
   color: #111;
@@ -1828,13 +1811,9 @@ body.exam-document .quiz-container {
   color: #111;
   font-weight: 700;
 }
-/* Bengali-script questions get Bengali numerals (১, ২, ৩…), matching a real board paper. */
 .quiz-item.bangla-question .quiz-question::before {
   content: counter(mcq-item, bengali) '. ';
 }
-
-/* Options — natural inline flow so short options share a line and long
-   options wrap to their own, exactly like a real dense board-paper column. */
 .quiz-options {
   display: block;
   margin: 0;
@@ -1842,8 +1821,6 @@ body.exam-document .quiz-container {
   font-size: 8.6pt;
   color: #111;
 }
-
-/* Individual option */
 .quiz-option {
   display: inline;
   padding: 0;
@@ -1864,17 +1841,11 @@ body.exam-document .quiz-container {
 .quiz-option:nth-child(2)::before { content: '(B) '; }
 .quiz-option:nth-child(3)::before { content: '(C) '; }
 .quiz-option:nth-child(4)::before { content: '(D) '; }
-
-/* Bengali option labels */
 .quiz-item.bangla-question .quiz-option:nth-child(1)::before { content: 'ক) '; }
 .quiz-item.bangla-question .quiz-option:nth-child(2)::before { content: 'খ) '; }
 .quiz-item.bangla-question .quiz-option:nth-child(3)::before { content: 'গ) '; }
 .quiz-item.bangla-question .quiz-option:nth-child(4)::before { content: 'ঘ) '; }
 
-/* Answer Key — plain printed strip, not a highlighted callout box.
-   It is moved onto its own fresh page by finalizeExamDocumentIfNeeded(),
-   so it is styled here as a standalone top-level block, not a column-span
-   child of .quiz-container. */
 .quiz-answer-key {
   margin-top: 4px;
   padding: 6px 8px;
@@ -1911,7 +1882,6 @@ body.exam-document .quiz-container {
   font-size: 8pt;
 }
 
-/* ---- Creative Questions (সৃজনশীল), Three Columns ---- */
 .cq-container {
   counter-reset: cq-item;
   margin: 4px 0 0;
@@ -1977,7 +1947,6 @@ body.exam-document .cq-container {
   margin-right: 3px;
 }
 
-/* ---- Bottom strip: short questions (left) + answer/OMR sheet (right) ---- */
 .exam-bottom-row {
   display: grid;
   grid-template-columns: 3fr 2fr;
@@ -2012,7 +1981,6 @@ body.exam-document .cq-container {
   content: counter(short-q-item, bengali) '. ';
 }
 
-/* ---- OMR Sheet ---- */
 .omr-sheet-page {
   font-family: 'Times New Roman', Times, serif;
   padding-top: 6px;
@@ -2021,8 +1989,6 @@ body.exam-document .cq-container {
   break-inside: avoid;
   page-break-inside: avoid;
 }
-/* Compact variant: sits inside .exam-bottom-row next to the short-question
-   list, so it needs no top rule/margin of its own and a smaller title. */
 .omr-sheet-page.omr-sheet-compact {
   padding-top: 0;
   margin-top: 0;
@@ -2060,8 +2026,6 @@ body.exam-document .cq-container {
   border-radius: 0;
   padding: 5px 7px;
 }
-/* Compact grid: fewer columns since it only occupies the right half of the
-   bottom strip alongside the short-question list. */
 .omr-grid.omr-compact {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 2px 5px;
@@ -2106,12 +2070,9 @@ body.exam-document .cq-container {
   height: 10px;
   font-size: 5.4pt;
 }
-
-/* Bangla OMR labels */
 .omr-sheet-page.bangla-omr .omr-bubble {
   font-size: 6.2pt;
 }
-
 .omr-instructions {
   margin-top: 4px;
   font-size: 7.3pt;
@@ -2119,7 +2080,6 @@ body.exam-document .cq-container {
   font-style: italic;
 }
 
-/* ---- Monochrome overrides for exam ---- */
 .photocopy-mode .quiz-question,
 .photocopy-mode .quiz-question::before,
 .photocopy-mode .quiz-option::before,
@@ -2151,7 +2111,6 @@ body.exam-document .cq-container {
   border-color: #000 !important;
 }
 
-/* ---- Responsive: fewer columns on small screens ---- */
 @media (max-width: 850px) {
   body.exam-document .quiz-container,
   body.exam-document .cq-container {
@@ -2171,7 +2130,6 @@ body.exam-document .cq-container {
   }
 }
 
-/* ---- Hide exam-only blocks by default (only show when exam class is active) ---- */
 body:not(.exam-document) .quiz-container,
 body:not(.exam-document) .exam-header-block,
 body:not(.exam-document) .exam-section-title,
@@ -2181,7 +2139,6 @@ body:not(.exam-document) .omr-sheet-page {
   display: none !important;
 }
 
-/* ---- Loading dots ---- */
 .loading-dots {
   display: flex;
   gap: 4px;
@@ -2227,15 +2184,15 @@ body:not(.exam-document) .omr-sheet-page {
 }
 
 /* ============================================================
-   PROGRESS OVERLAY — MODERN WHITE DESIGN (UPDATED)
+   PROGRESS OVERLAY — MODERN, TWO‑PANEL DESIGN WITH LIVE PREVIEW & QUOTES
    ============================================================ */
 #global-progress-overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   z-index: 9999;
   align-items: center;
   justify-content: center;
@@ -2244,121 +2201,274 @@ body:not(.exam-document) .omr-sheet-page {
 }
 
 .progress-card {
-  background: #ffffff;
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(0, 0, 0, 0.06);
-  padding: 36px 40px 32px;
+  background: var(--surface-color);
+  border-radius: 28px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.20), 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 28px 32px 24px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: min(420px, 92vw);
+  width: min(820px, 94vw);
   max-height: 94vh;
   overflow-y: auto;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  animation: cardIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: cardIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
+  gap: 14px;
 }
-
 .dark .progress-card {
   background: #1a1b2e;
   border-color: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ---- Progress Header ---- */
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 .spinner-loader {
-  width: 42px;
-  height: 42px;
-  border: 3px solid #e8eaf0;
-  border-top-color: #5751e8;
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary-color);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin-bottom: 16px;
+  flex-shrink: 0;
 }
-
 .dark .spinner-loader {
   border-color: #2a2c4a;
   border-top-color: #7b73f0;
 }
-
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-#progress-overlay-title {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: #14152b;
-  margin: 0 0 4px;
-  text-align: center;
+.progress-title-group {
+  flex: 1;
+  min-width: 0;
 }
-
+#progress-overlay-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+#progress-overlay-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
 .dark #progress-overlay-title {
   color: #f0f0fb;
 }
-
-#progress-overlay-subtitle {
-  font-size: 0.85rem;
-  color: #676c88;
-  margin: 0 0 6px;
-  text-align: center;
-  line-height: 1.4;
-}
-
 .dark #progress-overlay-subtitle {
   color: #9497b8;
 }
 
-/* Page count display */
+/* ---- Progress Stats Row ---- */
+.progress-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
 #progress-page-count {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: #5751e8;
-  background: #eeedff;
-  padding: 4px 16px;
-  border-radius: 999px;
-  margin: 6px 0 10px;
+  color: var(--primary-color);
+  background: var(--primary-light);
+  padding: 4px 14px;
+  border-radius: var(--radius-pill);
   display: none;
   letter-spacing: 0.01em;
 }
-
 .dark #progress-page-count {
   color: #a69bff;
   background: rgba(87, 81, 232, 0.18);
 }
+#progress-model-badge {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  background: var(--bg-color);
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+}
+#progress-scope {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
 
-/* Progress bar */
+/* ---- Live Preview Panel (RIGHT side) ---- */
+.progress-live-preview-wrap {
+  background: var(--bg-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  padding: 12px;
+  margin-top: 4px;
+  overflow: hidden;
+  position: relative;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+.progress-live-preview-wrap .preview-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-live-preview-wrap .preview-label .page-indicator {
+  font-weight: 600;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.6rem;
+}
+.progress-live-preview-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100px;
+  max-height: 340px;
+  scroll-behavior: smooth;
+}
+.progress-live-preview-scroll .doc-page-canvas {
+  width: 794px;
+  height: 1123px;
+  max-height: 1123px;
+  padding: 40px 36px 36px 36px;
+  font-size: 10pt;
+  line-height: 1.5;
+  transform: scale(0.34);
+  transform-origin: top left;
+  margin: 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  flex-shrink: 0;
+  background: #fff;
+  color: #1a1a1a;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dark .progress-live-preview-scroll .doc-page-canvas {
+  background: #fff;
+  color: #1a1a1a;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+}
+.progress-live-preview-scroll .doc-page-canvas .page-footer-number {
+  display: none;
+}
+.progress-live-preview-scroll .doc-page-canvas .katex-eq {
+  color: #000 !important;
+}
+.progress-live-preview-scroll .doc-page-canvas .katex-eq .katex {
+  color: #000 !important;
+}
+
+/* ---- Quote Container (soul of the modal) ---- */
+.progress-quote-container {
+  margin-top: 6px;
+  padding: 12px 16px;
+  background: var(--primary-light);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--primary-color);
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s ease;
+}
+.dark .progress-quote-container {
+  background: rgba(139, 121, 255, 0.10);
+  border-left-color: #7b73f0;
+}
+#progress-quote-text {
+  font-family: 'Hind Siliguri', 'Inter', sans-serif;
+  font-size: 0.98rem;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--text-primary);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.4s ease;
+  transform: translateY(4px);
+}
+#progress-quote-text.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+#progress-quote-text .quote-mark {
+  color: var(--primary-color);
+  font-size: 1.4rem;
+  font-weight: 700;
+  opacity: 0.5;
+  margin: 0 4px;
+}
+#progress-quote-text .quote-attribution {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+/* ---- Thick Gradient Progress Bar ---- */
 .progress-bar-track {
   width: 100%;
-  height: 6px;
-  background: #eef0f6;
-  border-radius: 999px;
+  height: 8px;
+  background: var(--border-color);
+  border-radius: var(--radius-pill);
   overflow: hidden;
-  margin-top: 12px;
+  margin-top: 6px;
+  position: relative;
 }
-
-.dark .progress-bar-track {
-  background: #282a44;
-}
-
 .progress-bar-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #5751e8, #9147e0);
-  border-radius: 999px;
-  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  background: var(--accent-gradient);
+  border-radius: var(--radius-pill);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
 }
-
-#progress-bar-fill.indeterminate {
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  animation: shimmer 1.8s infinite;
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.progress-bar-fill.indeterminate {
   width: 38% !important;
   animation: progressIndeterminate 1.2s ease-in-out infinite;
 }
-
 @keyframes progressIndeterminate {
   0%, 100% { transform: translateX(-82%); }
   50% { transform: translateX(165%); }
@@ -2369,395 +2479,177 @@ body:not(.exam-document) .omr-sheet-page {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  margin-top: 8px;
-  font-size: 0.78rem;
+  margin-top: 6px;
+  font-size: 0.72rem;
   font-weight: 600;
 }
-
 #progress-bar-percent {
-  color: #5751e8;
+  color: var(--primary-color);
 }
-
 .dark #progress-bar-percent {
   color: #a69bff;
 }
-
 #progress-bar-time {
-  color: #676c88;
+  color: var(--text-secondary);
 }
-
 .dark #progress-bar-time {
   color: #9497b8;
 }
 
-/* Steps indicator */
+/* ---- Modern Stepper (horizontal with icons) ---- */
 .progress-steps {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-top: 14px;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 0 4px;
 }
-
 .progress-steps span {
-  width: 56px;
-  height: 26px;
-  border-radius: 999px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px solid #e4e6f0;
-  background: #f7f8fc;
-  color: #676c88;
-  font-size: 0.65rem;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-secondary);
+  font-size: 0.6rem;
   font-weight: 700;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
+  white-space: nowrap;
 }
-
 .dark .progress-steps span {
   border-color: #2c2e4e;
   background: #1e1f38;
   color: #9497b8;
 }
-
-.progress-steps span.active {
-  background: #eeedff;
-  border-color: rgba(87, 81, 232, 0.3);
-  color: #5751e8;
+.progress-steps span .step-icon {
+  font-size: 0.75rem;
 }
-
+.progress-steps span.active {
+  background: var(--primary-light);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(87, 81, 232, 0.12);
+}
 .dark .progress-steps span.active {
   background: rgba(87, 81, 232, 0.18);
-  border-color: rgba(87, 81, 232, 0.3);
+  border-color: rgba(87, 81, 232, 0.4);
   color: #a69bff;
 }
-
 .progress-steps span.done {
-  background: rgba(22, 185, 129, 0.1);
-  border-color: rgba(22, 185, 129, 0.2);
-  color: #16b981;
+  background: rgba(22, 185, 129, 0.10);
+  border-color: rgba(22, 185, 129, 0.20);
+  color: var(--success-color);
 }
-
 .dark .progress-steps span.done {
   background: rgba(22, 185, 129, 0.12);
-  border-color: rgba(22, 185, 129, 0.2);
+  border-color: rgba(22, 185, 129, 0.20);
   color: #34d399;
 }
-
 .progress-steps i {
-  width: 14px;
+  width: 20px;
   height: 2px;
-  background: #d4d6e4;
+  background: var(--border-color);
   border-radius: 2px;
-  transition: background 0.2s ease;
+  transition: background 0.3s ease;
+  flex-shrink: 0;
 }
-
 .dark .progress-steps i {
   background: #363a5c;
 }
-
 .progress-steps i.done {
-  background: #16b981;
+  background: var(--success-color);
 }
-
 .dark .progress-steps i.done {
   background: #34d399;
 }
 
-/* Model badge & scope */
-#progress-model-badge {
-  font-size: 0.75rem;
-  color: #676c88;
-  margin-top: 4px;
-}
-
-.dark #progress-model-badge {
-  color: #9497b8;
-}
-
-#progress-scope {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #676c88;
-  margin-top: 4px;
-  text-align: center;
-  line-height: 1.3;
-}
-
-.dark #progress-scope {
-  color: #9497b8;
-}
-
-/* Live preview */
+/* ---- Progress Live Preview (legacy text-based preview - kept for fallback) ---- */
 #progress-live-preview {
-  width: 100%;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #f7f8fc;
-  border-radius: 12px;
-  margin: 10px 0 6px;
-  padding: 8px 10px;
-  border: 1px solid #eef0f6;
-  scroll-behavior: smooth;
+  display: none;
 }
 
-.dark #progress-live-preview {
-  background: #121324;
-  border-color: #222442;
-}
-
-/* File progress items */
-.progress-file-item {
-  background: #ffffff;
-  border: 1px solid #eef0f6;
-  border-left: 4px solid #5751e8;
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-}
-
-.dark .progress-file-item {
-  background: #1a1b2e;
-  border-color: #282a44;
-}
-
-.progress-file-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.progress-file-name {
-  font-size: 0.75rem;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  color: #14152b;
-}
-
-.dark .progress-file-name {
-  color: #e8e8f5;
-}
-
-.progress-file-status {
-  flex: 0 0 auto;
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #eeedff;
-  color: #5751e8;
-}
-
-.progress-file-status.done {
-  background: rgba(22, 185, 129, 0.12);
-  color: #087f5b;
-}
-
-.progress-file-status.error {
-  background: rgba(240, 51, 90, 0.1);
-  color: #b4233d;
-}
-
-.progress-file-status.fallback {
-  background: rgba(245, 158, 11, 0.12);
-  color: #9a6700;
-}
-
-.progress-file-meta {
-  margin-top: 3px;
-  font-size: 0.65rem;
-  color: #676c88;
-  line-height: 1.3;
-}
-
-.dark .progress-file-meta {
-  color: #9497b8;
-}
-
-.progress-file-track {
-  height: 4px;
-  margin-top: 5px;
-  border-radius: 999px;
-  background: #eef0f6;
-  overflow: hidden;
-}
-
-.dark .progress-file-track {
-  background: #282a44;
-}
-
-.progress-file-fill {
-  width: 0%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #5751e8, #9147e0);
-  transition: width 0.25s ease;
-}
-
-/* Page thumbnails */
-.progress-page-thumb {
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
-  font-size: 0.7rem;
-  color: #14152b;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  border-left: 3px solid #5751e8;
-  font-family: 'Times New Roman', serif;
-  line-height: 1.4;
-  max-height: 100px;
-  overflow: hidden;
-  position: relative;
-}
-
-.dark .progress-page-thumb {
-  background: #1a1b2e;
-  color: #e8e8f5;
-}
-
-.progress-page-thumb .thumb-label {
-  font-size: 0.6rem;
-  font-weight: 700;
-  color: #676c88;
-  font-family: 'Inter', system-ui, sans-serif;
-  display: block;
-  margin-bottom: 2px;
-}
-
-.dark .progress-page-thumb .thumb-label {
-  color: #9497b8;
-}
-
-.progress-page-thumb .thumb-text {
-  font-size: 0.65rem;
-  color: #333;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dark .progress-page-thumb .thumb-text {
-  color: #c8c8e0;
-}
-
-.progress-page-thumb .thumb-badge {
-  position: absolute;
-  right: 6px;
-  top: 6px;
-  font-size: 0.55rem;
-  background: #eeedff;
-  color: #5751e8;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-weight: 700;
-}
-
-.dark .progress-page-thumb .thumb-badge {
-  background: rgba(87, 81, 232, 0.18);
-  color: #a69bff;
-}
-
-.progress-page-thumb.done {
-  border-left-color: #16b981;
-  opacity: 0.85;
-}
-
-.progress-page-thumb.active {
-  border-left-color: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
-}
-
-/* Cancel button */
+/* ---- Action Row ---- */
 .progress-action-row {
   display: flex;
   gap: 8px;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 8px;
 }
-
 .cancel-btn {
   min-width: 104px;
   padding: 9px 24px;
-  background: #f0335a;
+  background: var(--danger-color);
   color: #fff;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
 .cancel-btn:hover {
   filter: brightness(0.92);
   transform: scale(1.02);
 }
-
 .cancel-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
-
 .dark .cancel-btn {
   background: #dc1f45;
 }
 
-/* ===== AI MODELS MODAL ===== */
+/* ===== AI MODELS MODAL (Enhanced) ===== */
 #ai-models-modal {
-  background: rgba(10, 11, 20, 0.42) !important;
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(10, 11, 20, 0.50) !important;
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
 }
 .ai-models-modal-card {
   background: var(--surface-color);
   padding: 0;
-  border-radius: 20px;
-  max-width: 620px;
-  width: min(620px, 96vw);
-  max-height: 88vh;
+  border-radius: 24px;
+  max-width: 660px;
+  width: min(660px, 96vw);
+  max-height: 90vh;
   overflow: hidden;
-  box-shadow: 0 24px 70px rgba(0,0,0,.18);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.20);
   border: 1px solid var(--border-color);
-  box-sizing: border-box;
-  display:flex;
-  flex-direction:column;
+  display: flex;
+  flex-direction: column;
 }
 .ai-models-modal-header {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:16px 18px 12px;
-  border-bottom:1px solid var(--border-color);
-  flex-shrink:0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  background: var(--bg-color);
 }
 .ai-models-modal-title-wrap { flex:1; min-width:0; }
 .ai-models-modal-header h3 {
   margin:0;
   font-family:var(--font-display);
-  font-size:1rem;
+  font-size:1.05rem;
   letter-spacing:-.01em;
 }
 .ai-models-modal-subtitle {
-  margin-top:3px;
+  margin-top:2px;
   color:var(--text-secondary);
-  font-size:.72rem;
+  font-size:.7rem;
 }
 .ai-model-head-btn,
 .ai-model-icon-btn {
-  width:34px;
-  height:34px;
+  width:36px;
+  height:36px;
   border:1px solid var(--border-color);
   background:var(--surface-color);
   color:var(--text-secondary);
@@ -2779,7 +2671,7 @@ body:not(.exam-document) .omr-sheet-page {
 
 .ai-model-info-panel {
   display:none;
-  padding:12px 18px;
+  padding:14px 20px;
   border-bottom:1px solid var(--border-color);
   background:var(--bg-color);
   color:var(--text-secondary);
@@ -2810,6 +2702,7 @@ body:not(.exam-document) .omr-sheet-page {
   border-bottom:1px solid var(--border-color);
   flex-wrap:wrap;
   flex-shrink:0;
+  background:var(--bg-color);
 }
 .ai-models-toolbar-spacer { flex:1; }
 .ai-models-toolbar .topbar-btn {
@@ -2817,9 +2710,8 @@ body:not(.exam-document) .omr-sheet-page {
   font-size:.72rem;
   gap:6px;
 }
-
 #ai-models-list {
-  padding:10px 14px 12px;
+  padding:12px 16px 14px;
   overflow:auto;
   flex:1 1 auto;
   min-height:80px;
@@ -2829,15 +2721,15 @@ body:not(.exam-document) .omr-sheet-page {
   grid-template-columns:auto auto minmax(0,1fr) auto;
   align-items:center;
   gap:10px;
-  padding:10px 10px;
+  padding:10px 12px;
   border:1px solid var(--border-color);
-  border-radius:13px;
+  border-radius:14px;
   background:var(--surface-color);
-  transition:background .15s ease,border-color .15s ease,box-shadow .15s ease,opacity .15s ease;
+  transition:all .15s ease;
   position:relative;
 }
-.ai-model-card + .ai-model-card { margin-top:7px; }
-.ai-model-card:hover { background:var(--bg-color); }
+.ai-model-card + .ai-model-card { margin-top:6px; }
+.ai-model-card:hover { background:var(--bg-color); border-color:var(--primary-light); }
 .ai-model-card.dragging { opacity:.45; border-color:var(--primary-color); }
 .ai-model-card.active { border-color:var(--primary-color); box-shadow:0 0 0 3px rgba(87,81,232,.08); }
 .ai-model-drag-handle {
@@ -2861,33 +2753,33 @@ body:not(.exam-document) .omr-sheet-page {
   border-radius:8px;
   background:var(--bg-color);
   color:var(--text-secondary);
-  font-size:.68rem;
+  font-size:.65rem;
   font-weight:700;
   display:flex;
   align-items:center;
   justify-content:center;
 }
 .ai-model-card-main { min-width:0; }
-.ai-model-card-title { display:flex; align-items:center; gap:7px; min-width:0; }
-.ai-model-card-title strong { font-size:.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ai-model-card-title { display:flex; align-items:center; gap:7px; min-width:0; flex-wrap:wrap; }
+.ai-model-card-title strong { font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ai-model-active-dot { width:7px; height:7px; border-radius:50%; background:var(--success-color); flex:0 0 auto; }
-.ai-model-card-sub { color:var(--text-secondary); font-size:.68rem; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ai-model-card-actions { display:flex; align-items:center; gap:5px; }
+.ai-model-card-sub { color:var(--text-secondary); font-size:.65rem; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ai-model-card-actions { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .ai-model-card-actions .topbar-btn {
-  min-height:30px;
-  padding:5px 8px;
-  font-size:.7rem;
-  gap:5px;
+  min-height:28px;
+  padding:4px 8px;
+  font-size:.68rem;
+  gap:4px;
 }
 .ai-model-card-actions .label-desktop { display:inline; }
 .ai-model-badge {
   display:inline-flex;
   align-items:center;
   gap:4px;
-  font-size:.62rem;
+  font-size:.6rem;
   font-weight:700;
-  padding:3px 7px;
-  border-radius:999px;
+  padding:2px 8px;
+  border-radius:var(--radius-pill);
   white-space:nowrap;
 }
 .ai-model-badge.idle { background:var(--surface-hover); color:var(--text-secondary); }
@@ -2962,22 +2854,15 @@ body:not(.exam-document) .omr-sheet-page {
 .ai-model-add-status.error { color:var(--danger-color); }
 .ai-model-form-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
 .ai-model-form-actions .topbar-btn { padding:6px 10px; font-size:.72rem; }
-@media (max-width:560px) {
-  .ai-model-card { grid-template-columns:auto auto minmax(0,1fr); }
-  .ai-model-card-actions { grid-column:3; justify-content:flex-end; margin-top:4px; }
-  .ai-model-form-grid { grid-template-columns:1fr; }
-  .ai-field-full { grid-column:auto; }
-  .ai-model-card-actions .label-desktop { display:none; }
-}
 
-/* ===== EDIT PAGE MODAL ===== */
+/* ===== EDIT PAGE MODAL (Enhanced) ===== */
 #edit-page-modal {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0,0,0,0.50);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 10000;
   align-items: center;
   justify-content: center;
@@ -2986,25 +2871,36 @@ body:not(.exam-document) .omr-sheet-page {
 }
 #edit-page-modal .modal-card {
   background: var(--surface-color);
-  padding: 24px;
+  padding: 28px 30px 24px;
   border-radius: var(--radius-lg);
-  max-width: 420px;
+  max-width: 440px;
   width: 100%;
   box-shadow: var(--shadow-lg);
   box-sizing: border-box;
   position: relative;
+  border: 1px solid var(--border-color);
 }
 #edit-page-modal h3 {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-family: var(--font-display);
+  font-size: 1.1rem;
 }
 #edit-page-modal .modal-desc {
   color: var(--text-secondary);
-  font-size: 0.85rem;
-  margin-bottom: 16px;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
   line-height: 1.5;
 }
 #edit-page-modal .modal-desc b { color: var(--text-primary); }
+#edit-page-modal .page-hint {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-color);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  margin-bottom: 10px;
+}
 #edit-page-modal input {
   width: 100%;
   padding: 10px 12px;
@@ -3012,7 +2908,7 @@ body:not(.exam-document) .omr-sheet-page {
   border-radius: var(--radius-sm);
   background: var(--bg-color);
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: 0.95rem;
   box-sizing: border-box;
   transition: border 0.2s;
 }
@@ -3021,11 +2917,123 @@ body:not(.exam-document) .omr-sheet-page {
   outline: none;
   box-shadow: 0 0 0 3px rgba(87, 81, 232, 0.12);
 }
+#edit-page-modal .chip-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  min-height: 28px;
+}
+#edit-page-modal .chip-preview .page-chip {
+  background: var(--primary-light);
+  color: var(--primary-color);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
 #edit-page-modal .modal-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 18px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+/* ===== PAGE RANGE MODAL (Enhanced) ===== */
+#page-range-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.50);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+#page-range-modal .modal-card {
+  background: var(--surface-color);
+  padding: 28px 30px 24px;
+  border-radius: var(--radius-lg);
+  max-width: 400px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+}
+#page-range-modal h3 {
+  margin-bottom: 4px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+#page-range-modal .modal-desc {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+#page-range-modal .total-pages-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  background: var(--primary-light);
+  padding: 2px 12px;
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  margin-bottom: 10px;
+}
+#page-range-modal .range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+#page-range-modal .range-inputs input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+#page-range-modal .range-inputs input:focus {
+  border-color: var(--primary-color);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(87, 81, 232, 0.12);
+}
+#page-range-modal .range-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+#page-range-modal .range-presets button {
+  padding: 4px 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+#page-range-modal .range-presets button:hover {
+  background: var(--primary-light);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+#page-range-modal .modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
   flex-wrap: wrap;
 }
 
@@ -3077,9 +3085,19 @@ body:not(.exam-document) .omr-sheet-page {
   #document-view-container, #pdf-view-container { padding: 12px 8px !important; overflow-x: hidden !important; }
   #pdf-iframe { box-shadow: var(--shadow-sm); }
   .quiz-container { column-count: 1 !important; }
-  .progress-card { padding: 26px 22px; width: min(340px, 90vw); }
+
+  /* Progress Modal Mobile */
+  .progress-card { padding: 20px 16px; width: min(360px, 92vw); max-height: 96vh; }
+  .progress-live-preview-scroll { max-height: 160px; }
+  .progress-live-preview-scroll .doc-page-canvas { transform: scale(0.22); padding: 30px 24px 24px 24px; font-size: 8pt; }
+  .progress-steps span { font-size: 0.5rem; padding: 3px 8px; }
+  .progress-steps span .step-icon { font-size: 0.6rem; }
+  #progress-quote-text { font-size: 0.85rem; }
+  .progress-stats-row { gap: 8px; }
+  #progress-model-badge { font-size: 0.6rem; padding: 2px 8px; }
+  #progress-page-count { font-size: 0.65rem; padding: 2px 10px; }
+
   #toast-notification { left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom, 16px)); text-align: center; }
-  #progress-live-preview { max-height: 180px; }
 
   #tab-bar { padding: 0 6px; gap: 2px; height: 38px; }
   .tab-item { padding: 4px 8px 4px 10px; font-size: 0.7rem; max-width: 120px; min-width: 40px; }
@@ -3092,6 +3110,15 @@ body:not(.exam-document) .omr-sheet-page {
   #at-command-menu-backdrop.open { display: block; position: fixed; inset: 0; background: rgba(10, 11, 20, 0.45); z-index: 205; }
   @keyframes atSheetSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .at-command-item { padding: 12px 10px; }
+
+  /* AI Models Modal Mobile */
+  .ai-models-modal-card { max-width: 98vw; border-radius: 18px; }
+  .ai-model-card { grid-template-columns: auto auto minmax(0,1fr); }
+  .ai-model-card-actions { grid-column: 3; justify-content:flex-end; margin-top:4px; }
+  .ai-model-form-grid { grid-template-columns:1fr; }
+  .ai-field-full { grid-column:auto; }
+  .ai-model-card-actions .label-desktop { display:none; }
+  .ai-models-modal-header { padding: 14px 16px; }
 }
 
 @media (max-width: 420px) {
@@ -3130,12 +3157,6 @@ body:not(.exam-document) .omr-sheet-page {
 @media (max-width: 850px) { #preview-tabs-desktop { display: none !important; } }
 @media (min-width: 851px) { #preview-tabs { display: none !important; } }
 
-#progress-model-badge {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  text-align: center;
-}
 .ui-icon, .at-cmd-icon, .at-cmd-remove, #at-command-menu-close {
   display: inline-flex;
   align-items: center;
@@ -3224,7 +3245,6 @@ body:not(.exam-document) .omr-sheet-page {
   }
 }
 
-/* Desktop full‑height fix */
 @media (min-width: 851px) {
   body {
     height: 100vh !important;
@@ -3894,9 +3914,6 @@ body:not(.exam-document) .omr-sheet-page {
   display: block;
   margin: 0.85em 0;
 }
-/* Make rendered equations follow the app's text color (KaTeX otherwise
-   ships hard-coded black glyphs, so without this every equation is
-   unreadable on the dark theme). */
 .katex-eq .katex {
   color: var(--text-primary);
   font-size: 1.05em;
@@ -3904,20 +3921,12 @@ body:not(.exam-document) .omr-sheet-page {
 .katex-eq .katex .katex-html {
   color: inherit;
 }
-/* Equation waiting on KaTeX to finish loading / a retry pass */
 .katex-eq[data-render-pending="true"]:not(.katex-render-failed) {
   opacity: 0.55;
   filter: saturate(0.7);
   transition: opacity 0.2s var(--ease);
 }
 
-/* ===== RENDER FAILURE STYLING =====
-   Uses the --render-failed-* variables above instead of hardcoded hex values, and no
-   longer stacks !important on every property. It still defaults to red (an error state
-   should read as an error), but it's now a normal, overridable default rather than a
-   value nothing else — a theme, print/monochrome mode, or a future per-document color
-   choice — can ever change. To use a different color, override the three
-   --render-failed-* variables (globally in :root/.dark, or scoped to a container). */
 .katex-eq.katex-render-failed {
   background-color: var(--render-failed-bg);
   color: var(--render-failed-color);
@@ -3931,5 +3940,3 @@ body:not(.exam-document) .omr-sheet-page {
   color: var(--render-failed-color);
   font-weight: 600;
 }
-/* .dark overrides --render-failed-* directly (see the :root/.dark variable block above),
-   so no separate dark-mode color rule is needed here anymore. */
