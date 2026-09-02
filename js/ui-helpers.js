@@ -21,7 +21,8 @@ function displayToastNotification(msg) {
 const QUOTE_CACHE_KEY = 'ai_bengali_quotes_cache';
 const QUOTE_TIMESTAMP_KEY = 'ai_bengali_quotes_timestamp';
 const QUOTE_CACHE_DAYS = 3;
-const QUOTE_ROTATION_INTERVAL_MS = 6000;
+// বাড়ানো হলো ১৪ সেকেন্ডে (আগে ছিল ৬ সেকেন্ড)
+const QUOTE_ROTATION_INTERVAL_MS = 14000;
 
 // ---- Seed fallback quotes (also AI-generated, kept as safety net) ----
 const SEED_QUOTES_BENGALI = [
@@ -116,19 +117,16 @@ Return ONLY the JSON array, no other text.`;
 }
 
 function _loadQuoteLibrary() {
-  // Check cache first
   let cached = _getStoredQuotes();
   if (cached && cached.length >= 10 && !_isQuoteCacheStale()) {
     return cached;
   }
 
-  // If stale or missing, try to generate fresh ones in the background
   if (typeof _generateQuotesViaAI === 'function') {
     _generateQuotesViaAI().then(success => {
       if (success) {
         const fresh = _getStoredQuotes();
         if (fresh && fresh.length > 0) {
-          // Update the current quote list silently
           const current = ProgressUI._quotes;
           if (current && current.length > 0) {
             ProgressUI._quotes = fresh;
@@ -138,15 +136,12 @@ function _loadQuoteLibrary() {
     }).catch(() => {});
   }
 
-  // Return cached even if stale (we'll update in background)
   if (cached && cached.length >= 10) return cached;
-
-  // Final fallback: seed quotes
   return SEED_QUOTES_BENGALI;
 }
 
 // ============================================================
-// GLOBAL PROGRESS UI (ENHANCED WITH QUOTES & LIVE PREVIEW)
+// GLOBAL PROGRESS UI (ENHANCED)
 // ============================================================
 
 const ProgressUI = {
@@ -278,7 +273,7 @@ const ProgressUI = {
     const el = this._els().pageCount;
     if (!el) return;
     if (this._totalPages > 0) {
-      el.textContent = `📄 Page ${this._pageCount} of ${this._totalPages}`;
+      el.textContent = `📄 পৃষ্ঠা ${this._pageCount} এর ${this._totalPages}`;
       el.style.display = 'block';
     } else {
       el.style.display = 'none';
@@ -311,7 +306,6 @@ const ProgressUI = {
     const { quoteContent, quoteAttribution, quoteText } = this._els();
     if (!quoteContent || !quoteText) return;
     
-    // Fade out
     quoteText.classList.remove('visible');
     
     setTimeout(() => {
@@ -319,7 +313,6 @@ const ProgressUI = {
       if (quoteAttribution) {
         quoteAttribution.textContent = quote.attribution ? `— ${quote.attribution}` : '— AI';
       }
-      // Fade in
       quoteText.classList.add('visible');
     }, 300);
   },
@@ -335,15 +328,12 @@ const ProgressUI = {
 
   _startQuoteRotation() {
     this._stopQuoteRotation();
-    // Load quotes if not already loaded
     if (!this._quotes || this._quotes.length === 0) {
       this._loadQuotes();
     }
-    // Show first quote immediately
     const firstQuote = this._getRandomQuote(-1);
     this._currentQuoteIndex = this._quotes.indexOf(firstQuote);
     this._showQuote(firstQuote);
-    // Start interval
     this._quoteInterval = setInterval(() => {
       this._rotateQuote();
     }, QUOTE_ROTATION_INTERVAL_MS);
@@ -356,67 +346,15 @@ const ProgressUI = {
     }
   },
 
-  // ===== LIVE PREVIEW =====
-  updateLivePreview(html, pageNumber, totalPages) {
-    const scrollContainer = this._els().preview;
-    const pageLabel = this._els().previewPageLabel;
-    if (!scrollContainer) return;
-
-    // Update page counter
-    this._pageCount = pageNumber || this._pageCount;
-    this._totalPages = totalPages || this._totalPages;
+  // ===== LIVE PAGE NUMBER UPDATE (NO CONTENT PREVIEW) =====
+  updateLivePageNumber(pageNumber, totalPages) {
+    this._pageCount = Math.max(0, Number(pageNumber) || 0);
+    this._totalPages = Math.max(0, Number(totalPages) || 0);
     this._updatePageCountDisplay();
-    if (pageLabel) {
-      pageLabel.textContent = totalPages ? `Page ${pageNumber || 1} of ${totalPages}` : `Page ${pageNumber || 1}`;
+    const label = this._els().previewPageLabel;
+    if (label) {
+      label.textContent = totalPages ? `পৃষ্ঠা ${pageNumber || 1} এর ${totalPages}` : `পৃষ্ঠা ${pageNumber || 1}`;
     }
-
-    // If no HTML, clear the preview
-    if (!html || !html.trim()) {
-      scrollContainer.innerHTML = '';
-      return;
-    }
-
-    // Create a scaled A4 preview
-    const previewPage = document.createElement('div');
-    previewPage.className = 'doc-page-canvas';
-    previewPage.style.transform = 'scale(0.34)';
-    previewPage.style.transformOrigin = 'top left';
-    previewPage.style.margin = '0';
-    previewPage.style.width = '794px';
-    previewPage.style.height = '1123px';
-    previewPage.style.maxHeight = '1123px';
-    previewPage.style.padding = '40px 36px 36px 36px';
-    previewPage.style.fontSize = '10pt';
-    previewPage.style.lineHeight = '1.5';
-    previewPage.style.overflow = 'hidden';
-    previewPage.style.boxShadow = '0 2px 12px rgba(0,0,0,0.10)';
-    previewPage.style.background = '#fff';
-    previewPage.style.color = '#1a1a1a';
-    previewPage.style.pointerEvents = 'none';
-    previewPage.style.flexShrink = '0';
-    previewPage.innerHTML = html;
-
-    // Remove any existing footers
-    previewPage.querySelectorAll('.page-footer-number').forEach(f => f.remove());
-
-    // Clear and append
-    scrollContainer.innerHTML = '';
-    scrollContainer.appendChild(previewPage);
-
-    // Try to render math in the preview
-    if (typeof processMathEquationsInContainer === 'function') {
-      try {
-        processMathEquationsInContainer(previewPage);
-      } catch (_) {}
-    }
-    if (typeof renderAllKatexVisuals === 'function') {
-      try {
-        renderAllKatexVisuals(previewPage);
-      } catch (_) {}
-    }
-
-    // Scroll to top
-    scrollContainer.scrollTop = 0;
   },
 
   // ===== SHOW =====
@@ -434,6 +372,7 @@ const ProgressUI = {
     this._estimatedMs = 0;
     this._totalSteps = 0;
     this._stepDone = 0;
+    // **প্রোগ্রেস বার ০% থেকে শুরু হবে**
     this._lastPct = 0;
     this._mode = 'stage';
     this._stageStartPct = 0;
@@ -444,22 +383,19 @@ const ProgressUI = {
     this._setPercent(0, true);
     this._fileProgressItems.clear();
     
-    // Clear preview
+    // Clear preview container (only page number will show)
     if (e.preview) e.preview.innerHTML = '';
     this._previewContainer = e.preview;
     
-    // Reset steps
     this._setVisualStage(1);
     this._updatePageCountDisplay();
 
-    // Start quote rotation
     this._startQuoteRotation();
 
     const cancel = document.getElementById('cancel-processing-btn');
     if (cancel) cancel.disabled = false;
     if (typeof resetCancellationState === 'function') resetCancellationState();
 
-    // Start ticker
     this._startTicker();
   },
 
@@ -481,6 +417,7 @@ const ProgressUI = {
     const stage = this._stageStartPct < 25 ? 1 : (this._stageStartPct < 72 ? 2 : (this._stageStartPct < 94 ? 3 : 4));
     this._setVisualStage(stage);
     if (label) this.setLabel(label);
+    // পেজের শতাংশ সেট করা হচ্ছে স্টেজের শুরুতে
     this._setPercent(this._stageStartPct);
     if (indeterminate) this._setIndeterminate();
     this._startTicker();
@@ -534,9 +471,7 @@ const ProgressUI = {
     if (e.fill) e.fill.classList.remove('indeterminate');
     if (e.time) e.time.textContent = `Done • ${this._elapsed()}`;
     this._updatePageCountDisplay();
-    // Stop quote rotation
     this._stopQuoteRotation();
-    // Show a final quote
     const finalQuote = this._getRandomQuote(this._currentQuoteIndex);
     this._showQuote(finalQuote);
   },
@@ -558,12 +493,12 @@ const ProgressUI = {
       this._updatePageCountDisplay();
       const label = this._els().previewPageLabel;
       if (label) {
-        label.textContent = `Page ${this._pageCount} of ${this._totalPages}`;
+        label.textContent = `পৃষ্ঠা ${this._pageCount} এর ${this._totalPages}`;
       }
     }
   },
 
-  // ===== FILE PROGRESS (kept for OCR) =====
+  // ===== FILE PROGRESS =====
   addFileProgress(key, fileName, phase = 'Queued', meta = '') {
     if (!this._previewContainer) return null;
     const existing = this._fileProgressItems.get(key);
@@ -609,19 +544,8 @@ const ProgressUI = {
   },
 
   addPagePreview(label, content, status) {
-    if (!this._previewContainer) return;
-    const div = document.createElement('div');
-    div.className = 'progress-page-thumb' + (status === 'active' ? ' active' : '') + (status === 'done' ? ' done' : '');
-    div.innerHTML = `
-      <span class="thumb-label"></span>
-      <span class="thumb-text"></span>
-      <span class="thumb-badge"></span>
-    `;
-    div.querySelector('.thumb-label').textContent = label || '';
-    div.querySelector('.thumb-text').textContent = (content || '').slice(0, 220) || '(no text detected)';
-    div.querySelector('.thumb-badge').textContent = status === 'active' ? 'Working' : '';
-    this._previewContainer.appendChild(div);
-    this._previewContainer.scrollTop = this._previewContainer.scrollHeight;
+    // শুধু পেজ নম্বর দেখাবে, কন্টেন্ট নয় — এখন আর ব্যবহার হচ্ছে না
+    // ফাংশনটি খালি রাখা হলো কিন্তু ভাঙা হবে না
   },
 
   clearPreview() {
@@ -672,7 +596,6 @@ function toggleDarkMode() {
     TAB_MANAGER._captureCurrentState(TAB_MANAGER.activeId);
     TAB_MANAGER._persist();
   }
-  // Trigger PDF preview refresh if visible
   if (typeof invalidatePDFPreviewCache === 'function') {
     invalidatePDFPreviewCache();
     const pdfView = document.getElementById('pdf-view-container');
@@ -711,7 +634,6 @@ function togglePhotocopyMode() {
     TAB_MANAGER._captureCurrentState(TAB_MANAGER.activeId);
     TAB_MANAGER._persist();
   }
-  // Trigger PDF preview refresh if visible
   if (typeof invalidatePDFPreviewCache === 'function') {
     invalidatePDFPreviewCache();
     const pdfView = document.getElementById('pdf-view-container');
@@ -857,7 +779,7 @@ function confirmPageRange() {
   }
 }
 
-// ===== EDIT PAGE MODAL (Enhanced with chip preview) =====
+// ===== EDIT PAGE MODAL =====
 let _editModalResolve = null;
 
 function openEditPageModal() {
@@ -871,15 +793,12 @@ function openEditPageModal() {
     const hint = document.getElementById('edit-page-hint');
     const chips = document.getElementById('edit-page-chips');
     
-    // Show total pages
     const totalPages = document.querySelectorAll('.doc-page-canvas').length || 0;
     if (hint) hint.textContent = `Document has ${totalPages} page${totalPages !== 1 ? 's' : ''}`;
     
-    // Clear previous
     if (input) input.value = '';
     if (chips) chips.innerHTML = '';
     
-    // Add live chip preview on input
     if (input) {
       input.oninput = function() {
         const raw = this.value.trim();
