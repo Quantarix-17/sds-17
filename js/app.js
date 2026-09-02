@@ -537,38 +537,65 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
     const systemInstruction = messages.find(m => m.role === 'system')?.content || '';
     const userMessages = messages.filter(m => m.role !== 'system');
 
-    const body = {
-      contents: userMessages.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      })),
-      generationConfig: {
-        temperature: APP_CONFIG.TEMPERATURE || 0.3,
-        // Do not set maxOutputTokens – let Gemini use its maximum
+    function buildGeminiBody(withGoogleSearch) {
+      const b = {
+        contents: userMessages.map(msg => ({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        })),
+        generationConfig: {
+          temperature: APP_CONFIG.TEMPERATURE || 0.3,
+          // Do not set maxOutputTokens – let Gemini use its maximum
+        }
+      };
+      if (systemInstruction) {
+        b.systemInstruction = { parts: [{ text: systemInstruction }] };
       }
-    };
-    if (systemInstruction) {
-      body.systemInstruction = { parts: [{ text: systemInstruction }] };
+      // Google Search grounding lets Gemini look up current information on the web
+      // before answering. Only attached when the model config allows it (default on).
+      if (withGoogleSearch) {
+        b.tools = [{ google_search: {} }];
+      }
+      return b;
     }
 
-    let response;
-    try {
+    async function doGeminiFetch(body) {
       const controller = new AbortController();
       activeRequestAbortController = controller;
-      response = await (bypassThinkingCooldown ? fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      }) : guardedFetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      }));
-    } catch (netErr) {
-      if (netErr.name === 'AbortError') throw new Error('Request cancelled.');
-      throw new Error(`Network error: ${netErr.message}`);
+      try {
+        return await (bypassThinkingCooldown ? fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }) : guardedFetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }));
+      } catch (netErr) {
+        if (netErr.name === 'AbortError') throw new Error('Request cancelled.');
+        throw new Error(`Network error: ${netErr.message}`);
+      }
+    }
+
+    const wantsGoogleSearch = cfg.enableGoogleSearch !== false;
+    let response = await doGeminiFetch(buildGeminiBody(wantsGoogleSearch));
+
+    if (!response.ok && wantsGoogleSearch) {
+      // Some Gemini model/API versions don't support the google_search tool
+      // (e.g. older 1.0/1.5 models on certain endpoints). Detect that specific
+      // failure and transparently retry once without grounding, instead of
+      // failing the whole request over an optional feature.
+      let firstErrDetail = '';
+      try { const errJson = await response.clone().json();
+        firstErrDetail = errJson.error?.message || JSON.stringify(errJson); } catch (_) { try { firstErrDetail = await response.clone().text(); } catch (_2) {} }
+      const toolUnsupported = response.status === 400 && /tool|google_search|search grounding|not supported|unknown name/i.test(firstErrDetail || '');
+      if (toolUnsupported) {
+        console.warn(`[${cfg.name}] Google Search grounding not supported by this model/endpoint, retrying without it:`, firstErrDetail);
+        response = await doGeminiFetch(buildGeminiBody(false));
+      }
     }
 
     if (!response.ok) {
@@ -584,7 +611,8 @@ async function callAIAPIRaw(messages, { forceJson = true, maxTokens, modelConfig
     }
     const content = data.candidates[0].content?.parts?.map(p => p.text).join('') || '';
     const finishReason = data.candidates[0].finishReason || 'stop';
-    return { content, finishReason };
+    const groundingMeta = data.candidates[0].groundingMetadata || null;
+    return { content, finishReason, groundingMetadata: groundingMeta };
   }
 
   // --- Original OpenAI-compatible branch ---
