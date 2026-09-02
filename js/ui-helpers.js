@@ -15,16 +15,18 @@ function displayToastNotification(msg) {
 }
 
 // ============================================================
-// AI-GENERATED BENGALI QUOTES ENGINE
+// AI-GENERATED BENGALI QUOTES ENGINE — LIVE GENERATION
 // ============================================================
 
 const QUOTE_CACHE_KEY = 'ai_bengali_quotes_cache';
 const QUOTE_TIMESTAMP_KEY = 'ai_bengali_quotes_timestamp';
-const QUOTE_CACHE_DAYS = 3;
-// বাড়ানো হলো ১৪ সেকেন্ডে (আগে ছিল ৬ সেকেন্ড)
-const QUOTE_ROTATION_INTERVAL_MS = 14000;
+// ক্যাশের মেয়াদ ১ ঘন্টা (আগে ছিল ৩ দিন)
+const QUOTE_CACHE_HOURS = 1;
+const QUOTE_CACHE_MS = QUOTE_CACHE_HOURS * 60 * 60 * 1000;
+// কোটেশন রোটেশন সময় ১২ সেকেন্ড
+const QUOTE_ROTATION_INTERVAL_MS = 12000;
 
-// ---- Seed fallback quotes (also AI-generated, kept as safety net) ----
+// ---- Seed fallback quotes (emergency only) ----
 const SEED_QUOTES_BENGALI = [
   { text: 'জীবনটা একটা অসম্পূর্ণ কবিতা, তুমি নিজেই লেখো বাকিটা।', attribution: 'AI' },
   { text: 'ভালোবাসা মানে আয়নার সামনে দাঁড়িয়ে নিজের চেয়ে বেশি করে অন্যকেই দেখা।', attribution: 'AI' },
@@ -48,96 +50,115 @@ const SEED_QUOTES_BENGALI = [
   { text: 'আলোর পথে হাঁটতে গেলে অন্ধকারকে ভয় পাওয়া চলে না।', attribution: 'AI' },
 ];
 
-function _getStoredQuotes() {
+// ===== কোটেশন জেনারেট করার ফাংশন (AI কল) =====
+async function _generateFreshQuotesViaAI() {
   try {
-    const raw = localStorage.getItem(QUOTE_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    return null;
-  } catch (_) { return null; }
-}
-
-function _getQuoteTimestamp() {
-  try {
-    const ts = localStorage.getItem(QUOTE_TIMESTAMP_KEY);
-    return ts ? parseInt(ts, 10) : 0;
-  } catch (_) { return 0; }
-}
-
-function _storeQuotes(quotes) {
-  try {
-    localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify(quotes));
-    localStorage.setItem(QUOTE_TIMESTAMP_KEY, String(Date.now()));
-  } catch (_) {}
-}
-
-function _isQuoteCacheStale() {
-  const ts = _getQuoteTimestamp();
-  if (!ts) return true;
-  const days = (Date.now() - ts) / (1000 * 60 * 60 * 24);
-  return days > QUOTE_CACHE_DAYS;
-}
-
-// ---- Silently generate fresh quotes via AI ----
-async function _generateQuotesViaAI() {
-  try {
-    if (typeof callAIAPI !== 'function') return false;
+    if (typeof callAIAPI !== 'function') {
+      console.warn('[Quotes] callAIAPI not available');
+      return null;
+    }
     const activeModel = typeof getActiveAIModel === 'function' ? getActiveAIModel() : null;
-    if (!activeModel) return false;
+    if (!activeModel) {
+      console.warn('[Quotes] No active AI model');
+      return null;
+    }
 
-    const prompt = `You are a modern Bengali poet. Generate 50 unique, short, heart-touching quotes in Bangla (Bengali). 
+    const prompt = `You are a modern Bengali poet. Generate 30 unique, short, heart-touching quotes in Bangla (Bengali). 
 Topics: জীবন (life), ভালোবাসা (love), মন (mind), সাহিত্য (literature), সংগ্রাম (struggle), শান্তি (peace), সৃজনশীলতা (creativity), সময় (time), স্বপ্ন (dream), and আত্মবিশ্বাস (confidence).
 Each quote must be between 10-20 words. Avoid clichés. Make them feel like they were written by a wise friend.
+CRITICAL: Every quote must be DIFFERENT and UNIQUE. Do not repeat any quote.
 Output ONLY a valid JSON array of objects with keys: "text" (the quote) and "attribution" (always "AI").
 Example: [{"text": "জীবনটা একটা অসম্পূর্ণ কবিতা...", "attribution": "AI"}]
 Return ONLY the JSON array, no other text.`;
 
     const result = await callAIAPI([
-      { role: 'system', content: 'You are a Bengali poet. Output only valid JSON.' },
+      { role: 'system', content: 'You are a Bengali poet. Output only valid JSON. Every quote must be unique and different.' },
       { role: 'user', content: prompt }
-    ], { forceJson: true, maxTokens: 4000 });
+    ], { forceJson: true, maxTokens: 3000 });
 
     let quotes = null;
     try {
       const parsed = typeof safeParseAIJson === 'function' ? safeParseAIJson(result.content, null) : JSON.parse(result.content);
       if (Array.isArray(parsed) && parsed.length > 0) {
         quotes = parsed.filter(q => q && q.text && q.text.trim().length > 5);
+        // নিশ্চিত করা যে সব কোটেশন ইউনিক
+        const seen = new Set();
+        quotes = quotes.filter(q => {
+          const key = q.text.trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       }
     } catch (_) {}
 
-    if (quotes && quotes.length >= 20) {
-      _storeQuotes(quotes);
-      return true;
+    if (quotes && quotes.length >= 10) {
+      // ক্যাশে সংরক্ষণ
+      try {
+        localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify(quotes));
+        localStorage.setItem(QUOTE_TIMESTAMP_KEY, String(Date.now()));
+      } catch (_) {}
+      return quotes;
     }
-    return false;
-  } catch (_) {
-    return false;
+    return null;
+  } catch (error) {
+    console.warn('[Quotes] AI generation failed:', error);
+    return null;
   }
 }
 
-function _loadQuoteLibrary() {
-  let cached = _getStoredQuotes();
-  if (cached && cached.length >= 10 && !_isQuoteCacheStale()) {
+// ===== ক্যাশে থেকে কোটেশন লোড (যদি expire না হয়) =====
+function _getCachedQuotes() {
+  try {
+    const raw = localStorage.getItem(QUOTE_CACHE_KEY);
+    if (!raw) return null;
+    const ts = parseInt(localStorage.getItem(QUOTE_TIMESTAMP_KEY) || '0', 10);
+    if (Date.now() - ts > QUOTE_CACHE_MS) {
+      // ক্যাশে expire
+      localStorage.removeItem(QUOTE_CACHE_KEY);
+      localStorage.removeItem(QUOTE_TIMESTAMP_KEY);
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // ডুপ্লিকেট চেক
+      const seen = new Set();
+      const unique = parsed.filter(q => {
+        if (!q || !q.text) return false;
+        const key = q.text.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return unique;
+    }
+    return null;
+  } catch (_) { return null; }
+}
+
+// ===== লাইভ কোটেশন লোড (AI কল + ক্যাশে) =====
+async function _loadLiveQuotes() {
+  // প্রথমে ক্যাশে চেক
+  let cached = _getCachedQuotes();
+  if (cached && cached.length >= 10) {
     return cached;
   }
 
-  if (typeof _generateQuotesViaAI === 'function') {
-    _generateQuotesViaAI().then(success => {
-      if (success) {
-        const fresh = _getStoredQuotes();
-        if (fresh && fresh.length > 0) {
-          const current = ProgressUI._quotes;
-          if (current && current.length > 0) {
-            ProgressUI._quotes = fresh;
-          }
-        }
-      }
-    }).catch(() => {});
-  }
+  // ক্যাশে নেই বা expire, তাই AI কল
+  try {
+    const fresh = await _generateFreshQuotesViaAI();
+    if (fresh && fresh.length >= 10) {
+      return fresh;
+    }
+  } catch (_) {}
 
-  if (cached && cached.length >= 10) return cached;
-  return SEED_QUOTES_BENGALI;
+  // সব ব্যর্থ হলে সিড কোটেশন (শাফল করে)
+  const shuffled = [...SEED_QUOTES_BENGALI];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 // ============================================================
@@ -165,6 +186,8 @@ const ProgressUI = {
   _quotes: [],
   _quoteInterval: null,
   _currentQuoteIndex: -1,
+  _usedQuoteIndices: [], // ইতিমধ্যে ব্যবহৃত কোটেশন ট্র্যাক করতে
+  _isQuoteGenerationInProgress: false,
 
   _els() {
     return {
@@ -280,26 +303,87 @@ const ProgressUI = {
     }
   },
 
-  // ===== QUOTE ENGINE =====
-  _loadQuotes() {
-    const raw = _loadQuoteLibrary();
-    this._quotes = Array.isArray(raw) && raw.length > 0 ? raw : SEED_QUOTES_BENGALI;
+  // ===== QUOTE ENGINE — LIVE & UNIQUE =====
+  async _loadQuotes() {
+    if (this._isQuoteGenerationInProgress) {
+      // ইতিমধ্যে জেনারেশন চলছে, অপেক্ষা করি
+      await new Promise(resolve => {
+        const check = () => {
+          if (!this._isQuoteGenerationInProgress) resolve();
+          else setTimeout(check, 200);
+        };
+        check();
+      });
+      return this._quotes;
+    }
+
+    this._isQuoteGenerationInProgress = true;
+    try {
+      const quotes = await _loadLiveQuotes();
+      if (quotes && quotes.length > 0) {
+        this._quotes = quotes;
+        this._usedQuoteIndices = [];
+      } else {
+        // ফলব্যাক: সিড কোটেশন শাফল
+        const shuffled = [...SEED_QUOTES_BENGALI];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        this._quotes = shuffled;
+        this._usedQuoteIndices = [];
+      }
+    } catch (_) {
+      // শেষ ফলব্যাক
+      const shuffled = [...SEED_QUOTES_BENGALI];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      this._quotes = shuffled;
+      this._usedQuoteIndices = [];
+    }
+    this._isQuoteGenerationInProgress = false;
     return this._quotes;
   },
 
-  _getRandomQuote(excludeIndex) {
+  _getNextUniqueQuote() {
     if (!this._quotes || this._quotes.length === 0) {
-      this._loadQuotes();
+      // ফলব্যাক
+      const shuffled = [...SEED_QUOTES_BENGALI];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      this._quotes = shuffled;
+      this._usedQuoteIndices = [];
     }
-    const list = this._quotes || SEED_QUOTES_BENGALI;
-    if (list.length === 0) return { text: 'জীবন সুন্দর, মনকে সুন্দর রাখো।', attribution: 'AI' };
-    let idx;
-    let attempts = 0;
-    do {
-      idx = Math.floor(Math.random() * list.length);
-      attempts++;
-    } while (idx === excludeIndex && list.length > 1 && attempts < 20);
-    return list[idx] || list[0];
+
+    const total = this._quotes.length;
+    if (total === 0) return { text: 'জীবন সুন্দর, মনকে সুন্দর রাখো।', attribution: 'AI' };
+
+    // যদি সব কোটেশন ব্যবহার করা হয়ে যায়, তাহলে রিসেট
+    if (this._usedQuoteIndices.length >= total) {
+      this._usedQuoteIndices = [];
+    }
+
+    // ব্যবহৃত নয় এমন একটি ইনডেক্স খুঁজি
+    let availableIndices = [];
+    for (let i = 0; i < total; i++) {
+      if (!this._usedQuoteIndices.includes(i)) {
+        availableIndices.push(i);
+      }
+    }
+
+    if (availableIndices.length === 0) {
+      this._usedQuoteIndices = [];
+      availableIndices = Array.from({ length: total }, (_, i) => i);
+    }
+
+    const randomIdx = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+    this._usedQuoteIndices.push(randomIdx);
+    this._currentQuoteIndex = randomIdx;
+    return this._quotes[randomIdx];
   },
 
   _showQuote(quote) {
@@ -318,22 +402,23 @@ const ProgressUI = {
   },
 
   _rotateQuote() {
-    if (!this._quotes || this._quotes.length === 0) {
-      this._loadQuotes();
-    }
-    const quote = this._getRandomQuote(this._currentQuoteIndex);
-    this._currentQuoteIndex = this._quotes.indexOf(quote);
+    const quote = this._getNextUniqueQuote();
     this._showQuote(quote);
   },
 
   _startQuoteRotation() {
     this._stopQuoteRotation();
-    if (!this._quotes || this._quotes.length === 0) {
-      this._loadQuotes();
-    }
-    const firstQuote = this._getRandomQuote(-1);
-    this._currentQuoteIndex = this._quotes.indexOf(firstQuote);
-    this._showQuote(firstQuote);
+    // লাইভ কোটেশন লোড করুন
+    this._loadQuotes().then(() => {
+      const firstQuote = this._getNextUniqueQuote();
+      this._showQuote(firstQuote);
+    }).catch(() => {
+      // ফলব্যাক
+      const fallback = this._quotes.length > 0 ? this._quotes[0] : { text: 'জীবন সুন্দর, মনকে সুন্দর রাখো।', attribution: 'AI' };
+      this._showQuote(fallback);
+    });
+
+    // ইন্টারভাল শুরু
     this._quoteInterval = setInterval(() => {
       this._rotateQuote();
     }, QUOTE_ROTATION_INTERVAL_MS);
@@ -372,7 +457,7 @@ const ProgressUI = {
     this._estimatedMs = 0;
     this._totalSteps = 0;
     this._stepDone = 0;
-    // **প্রোগ্রেস বার ০% থেকে শুরু হবে**
+    // প্রোগ্রেস বার ০% থেকে শুরু
     this._lastPct = 0;
     this._mode = 'stage';
     this._stageStartPct = 0;
@@ -383,13 +468,13 @@ const ProgressUI = {
     this._setPercent(0, true);
     this._fileProgressItems.clear();
     
-    // Clear preview container (only page number will show)
     if (e.preview) e.preview.innerHTML = '';
     this._previewContainer = e.preview;
     
     this._setVisualStage(1);
     this._updatePageCountDisplay();
 
+    // লাইভ কোটেশন শুরু
     this._startQuoteRotation();
 
     const cancel = document.getElementById('cancel-processing-btn');
@@ -417,7 +502,6 @@ const ProgressUI = {
     const stage = this._stageStartPct < 25 ? 1 : (this._stageStartPct < 72 ? 2 : (this._stageStartPct < 94 ? 3 : 4));
     this._setVisualStage(stage);
     if (label) this.setLabel(label);
-    // পেজের শতাংশ সেট করা হচ্ছে স্টেজের শুরুতে
     this._setPercent(this._stageStartPct);
     if (indeterminate) this._setIndeterminate();
     this._startTicker();
@@ -472,7 +556,8 @@ const ProgressUI = {
     if (e.time) e.time.textContent = `Done • ${this._elapsed()}`;
     this._updatePageCountDisplay();
     this._stopQuoteRotation();
-    const finalQuote = this._getRandomQuote(this._currentQuoteIndex);
+    // শেষ কোটেশন দেখানোর জন্য
+    const finalQuote = this._getNextUniqueQuote();
     this._showQuote(finalQuote);
   },
 
@@ -498,7 +583,7 @@ const ProgressUI = {
     }
   },
 
-  // ===== FILE PROGRESS =====
+  // ===== FILE PROGRESS (for OCR) =====
   addFileProgress(key, fileName, phase = 'Queued', meta = '') {
     if (!this._previewContainer) return null;
     const existing = this._fileProgressItems.get(key);
@@ -544,8 +629,7 @@ const ProgressUI = {
   },
 
   addPagePreview(label, content, status) {
-    // শুধু পেজ নম্বর দেখাবে, কন্টেন্ট নয় — এখন আর ব্যবহার হচ্ছে না
-    // ফাংশনটি খালি রাখা হলো কিন্তু ভাঙা হবে না
+    // আর ব্যবহার হচ্ছে না — শুধু পেজ নম্বর দেখানো হয়
   },
 
   clearPreview() {
