@@ -374,23 +374,23 @@
 
       <!-- Stats Row -->
       <div class="progress-stats-row">
-        <span id="progress-page-count">📄 Page 0 of 0</span>
+        <span id="progress-page-count">📄 পৃষ্ঠা ০ এর ০</span>
         <span id="progress-model-badge" style="font-size:0.72rem; color:var(--text-secondary);"></span>
         <span id="progress-scope" style="font-size:0.78rem; font-weight:600; color:var(--text-secondary); line-height:1.3; flex:1; min-width:0; text-align:left;"></span>
       </div>
 
-      <!-- Live Preview Panel -->
+      <!-- Live Preview Panel - শুধু পেজ নম্বর দেখাবে -->
       <div class="progress-live-preview-wrap">
         <div class="preview-label">
-          <span>📄 Live Page Preview</span>
-          <span class="page-indicator" id="progress-preview-page-label">Page 1</span>
+          <span>📄 লাইভ পেজ আপডেট</span>
+          <span class="page-indicator" id="progress-preview-page-label">পৃষ্ঠা ১ এর ১</span>
         </div>
         <div id="progress-live-preview-scroll" class="progress-live-preview-scroll">
-          <!-- The live preview will be injected here as a scaled doc-page-canvas -->
+          <!-- এখানে কোনো কন্টেন্ট থাকবে না, শুধু পেজ নম্বর দেখাবে -->
         </div>
       </div>
 
-      <!-- Quote Container (soul of the modal) -->
+      <!-- Quote Container -->
       <div class="progress-quote-container">
         <div id="progress-quote-text">
           <span class="quote-mark">“</span>
@@ -574,10 +574,10 @@
             });
         }
 
-        // Live preview: ensure the scroll container exists
+        // Live preview container - empty, only page number will show
         const previewScroll = document.getElementById('progress-live-preview-scroll');
-        if (!previewScroll) {
-          console.warn('Progress live preview scroll container missing.');
+        if (previewScroll) {
+            previewScroll.innerHTML = '';
         }
     });
   </script>
