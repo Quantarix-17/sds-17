@@ -2172,6 +2172,127 @@ async function handleRefineAction(promptText, intentPayload, pageContext, models
 }
 
 // ============================================================
+// SPECIAL TEXT COMMAND: "copy" — restyle an attached file's content verbatim
+// ============================================================
+// Not part of the @-command list at all. If the user has attached a file and the
+// chat input is exactly "copy" (any case, extra whitespace ignored), we skip the
+// normal @-command requirement entirely and just re-style the attached content:
+// nothing is added, removed, summarized, or rewritten — only visual formatting changes.
+function isCopyStyleCommand(rawInputValue) {
+  const stripped = typeof parseAndStripInlineCommandTokens === 'function' ?
+    parseAndStripInlineCommandTokens(rawInputValue).trim() : String(rawInputValue || '').trim();
+  return /^copy$/i.test(stripped);
+}
+
+async function handleCopyStyleCommand(inputField) {
+  const attachedEntries = Object.entries(APP_STATE.attachedFiles || {})
+    .filter(([, fileData]) => fileData && fileData.content && fileData.content.trim())
+    .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+
+  if (!attachedEntries.length) {
+    if (typeof displayToastNotification === 'function') {
+      displayToastNotification('⚠️ Attach a file first, then type "copy" to restyle it.');
+    }
+    return;
+  }
+  if (APP_STATE.isAIGenerating) {
+    if (typeof displayToastNotification === 'function') displayToastNotification('⏳ Please wait for the current AI task to finish first.');
+    return;
+  }
+
+  inputField.value = '';
+  inputField.style.height = 'auto';
+  if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('user', 'copy');
+  APP_STATE.selectedCommands = APP_STATE.selectedCommands.filter(c => c.id === 'chat');
+  if (typeof renderSelectedCommandChips === 'function') renderSelectedCommandChips();
+  if (typeof closeAtCommandMenu === 'function') closeAtCommandMenu();
+
+  APP_STATE.isAIGenerating = true;
+  const sendBtn = document.getElementById('send-message-btn');
+  if (sendBtn) sendBtn.disabled = true;
+  let loadingElement = typeof appendChatMessageToUI === 'function' ?
+    appendChatMessageToUI('ai', `<div class="loading-dots"><span></span><span></span><span></span></div>`, false) : null;
+
+  const modelsUsed = new Set();
+  const isMonochromeMode = document.body.classList.contains('photocopy-mode');
+
+  try {
+    if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
+      ProgressUI.show('Copying & restyling…', 'Reformatting the attached file content — nothing added or removed.');
+      ProgressUI.setStage('AI restyling…', 8, 78, { indeterminate: true });
+    }
+
+    const sourceBlocks = attachedEntries.map(([, fileData], i) => {
+      const cleaned = typeof cleanAttachmentSourceForAI === 'function' ? cleanAttachmentSourceForAI(fileData.content) : fileData.content;
+      const name = String(fileData.name || `file ${i + 1}`).replace(/[\r\n]+/g, ' ').trim();
+      return `\n[SOURCE FILE ${i + 1}: ${name}]\n${cleaned}\nEND SOURCE FILE ${i + 1}\n`;
+    });
+    const joinedSource = sourceBlocks.join('\n');
+    const outputLanguage = typeof detectOutputLanguage === 'function' ? detectOutputLanguage(joinedSource) : 'en';
+
+    const copySystem =
+      `You are a pure FORMATTING engine. Your ONLY job is to take the source content below and re-present it with clean visual styling — you must NOT summarize, shorten, expand, paraphrase, correct, reorder, translate, or omit ANY piece of it.\n` +
+      `${typeof buildSharedRules === 'function' ? buildSharedRules(isMonochromeMode, outputLanguage) : ''}\n` +
+      `=== ABSOLUTE RULES FOR THIS "COPY" TASK ===\n` +
+      `1. Every sentence, word, number, fact, name, and value from the source MUST appear in your output — nothing added, nothing removed, nothing summarized.\n` +
+      `2. Do NOT add your own commentary, introduction, conclusion, or explanation that wasn't in the source.\n` +
+      `3. Do NOT fix, correct, or change the source's actual wording/content — only apply visual structure (headings, paragraphs, lists, tables, callout boxes, bold) and, where the source clearly contains a mathematical expression, wrap it as LaTeX using $$...$$.\n` +
+      `4. Reorganize ONLY the visual presentation, never the substance or order of ideas — unless the source text is clearly out of order due to OCR/page-scan artifacts, in which case restore natural reading order.\n` +
+      `5. Ignore page numbers, running headers/footers, and OCR control markers — those are not content to copy.\n` +
+      `6. Return ONLY the raw HTML body content (no <html>/<head>/<body> tags, no markdown fences, no JSON wrapper, no commentary about what you did).`;
+
+    const userMsg = `Restyle and present ALL of the following source content, preserving every detail:\n${joinedSource}`;
+
+    const first = await callAIAPI([
+      { role: 'system', content: copySystem },
+      { role: 'user', content: userMsg }
+    ], {
+      forceJson: false,
+      modelsUsedSet: modelsUsed
+    });
+
+    if (typeof ProgressUI !== 'undefined' && ProgressUI.setStage) ProgressUI.setStage('Finalizing…', 78, 92);
+
+    let html = (first.content || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    html = await generateHtmlContentWithAutoContinue(userMsg, html, first.finishReason, modelsUsed, APP_CONFIG.CONTINUATION_MAX_LOOPS, first.modelConfig);
+
+    if (!html) throw new Error('The AI returned an empty response.');
+    if (typeof processMathEquationsToHTML === 'function') html = processMathEquationsToHTML(html);
+
+    if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+    const currentHTML = typeof getAllCanvasHTML === 'function' ? getAllCanvasHTML() : '';
+    const isCanvasEmpty = currentHTML.includes('Start typing here');
+    if (typeof setDocumentHTMLAndPaginate === 'function') {
+      if (isCanvasEmpty) setDocumentHTMLAndPaginate(html);
+      else setDocumentHTMLAndPaginate(currentHTML + '<br><br>' + html);
+    }
+    if (typeof HISTORY !== 'undefined' && HISTORY.saveState) HISTORY.saveState();
+    if (typeof invalidatePDFPreviewCache === 'function') invalidatePDFPreviewCache();
+
+    attachedEntries.forEach(([, fileData]) => { fileData.sent = true; });
+    if (typeof renderAttachmentBar === 'function') renderAttachmentBar();
+
+    if (loadingElement && loadingElement.isConnected) loadingElement.remove();
+    if (typeof appendChatMessageToUI === 'function') {
+      appendChatMessageToUI('ai', attachedEntries.length > 1 ?
+        `✅ Copied and restyled ${attachedEntries.length} files' content — nothing added or removed.` :
+        `✅ Copied and restyled the file's content — nothing added or removed.`);
+    }
+    if (typeof displayToastNotification === 'function') displayToastNotification('✅ Copy complete — restyled only, content unchanged.');
+  } catch (err) {
+    if (loadingElement && loadingElement.isConnected) loadingElement.remove();
+    console.error('Copy-style command failed:', err);
+    if (typeof appendChatMessageToUI === 'function') appendChatMessageToUI('error', `Copy failed: ${err.message || err}`);
+    if (typeof displayToastNotification === 'function') displayToastNotification(`Error Copy failed: ${err.message || err}`);
+  } finally {
+    if (typeof ProgressUI !== 'undefined') { ProgressUI.finish(); setTimeout(() => { if (typeof ProgressUI !== 'undefined' && ProgressUI.hide) ProgressUI.hide(); }, 300); }
+    APP_STATE.isAIGenerating = false;
+    if (sendBtn) sendBtn.disabled = false;
+    inputField.focus();
+  }
+}
+
+// ============================================================
 // MAIN CHAT FUNCTION (no exam/MCQ auto-detection)
 // ============================================================
 
@@ -2181,6 +2302,12 @@ async function sendChatPromptToAI() {
     const rawInputValue = inputField.value;
     if (!rawInputValue.trim()) return;
     if (APP_STATE.isAIGenerating) return;
+
+    // ===== SPECIAL TEXT COMMAND: "copy" (no @ command / modal needed) =====
+    if (isCopyStyleCommand(rawInputValue)) {
+      await handleCopyStyleCommand(inputField);
+      return;
+    }
 
     let promptText = typeof parseAndStripInlineCommandTokens === 'function' ? parseAndStripInlineCommandTokens(rawInputValue).trim() : rawInputValue.trim();
     if (!promptText) promptText = APP_STATE.selectedCommands.length > 0 ? 'Apply the selected @ command settings.' : '';
@@ -2792,6 +2919,8 @@ function handleChatKeyPress(event) {
 window.handleChatFormSubmit = handleChatFormSubmit;
 window.triggerChatSend = triggerChatSend;
 window.sendChatPromptToAI = sendChatPromptToAI;
+window.isCopyStyleCommand = isCopyStyleCommand;
+window.handleCopyStyleCommand = handleCopyStyleCommand;
 window.handleChatKeyPress = handleChatKeyPress;
 window.appendChatMessageToUI = appendChatMessageToUI;
 window.convertTextToDocumentHTML = convertTextToDocumentHTML;
