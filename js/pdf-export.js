@@ -257,20 +257,15 @@ async function exportToHighQualityPDF(btn) {
   try {
     const signature = typeof hashPDFPreviewSignature === 'function' ? hashPDFPreviewSignature() : '';
     if (typeof prepareDocumentForPDFPreview === 'function') prepareDocumentForPDFPreview(signature);
-    // NOTE: True PDF now reuses the SAME already-paginated editor pages that the
-    // on-screen Editor/Preview tabs show (_collectRenderableEditorPages), instead of
-    // recomputing page breaks from scratch via computeTruePDFPageChunks(). Running two
-    // independent pagination algorithms (the live editor's vs. computeTruePDFPages'
-    // own appendNodeWithPagination/pageFits pass) could disagree by a few pixels near a
-    // page boundary, which is what produced the blank page followed by an extra page at
-    // the end. Reusing the editor's own page boundaries removes that entire class of bug.
     let pageChunks = typeof _collectRenderableEditorPages === 'function' ?
       _collectRenderableEditorPages().map(page => page.innerHTML) : [];
     if (!pageChunks.length && typeof computeTruePDFPageChunks === 'function') {
       pageChunks = await computeTruePDFPageChunks({ signature, allowCache: true });
     }
+    const isDark = document.body.classList.contains('dark');
+    const isMonochrome = document.body.classList.contains('photocopy-mode');
     const printHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
-      buildUnifiedPDFPreviewDocument(pageChunks, document.body.classList.contains('photocopy-mode')) :
+      buildUnifiedPDFPreviewDocument(pageChunks, isMonochrome, isDark) :
       '';
     iframe.onload = null;
     iframe.removeAttribute('src');
@@ -315,11 +310,6 @@ async function exportToHighQualityPDF(btn) {
   messageHandler = (e) => {
     if (e.source === iframe.contentWindow && e.data === 'pdf-iframe-ready') runPrint();
   };
-  // These are both fallbacks in case the 'pdf-iframe-ready' postMessage never arrives.
-  // They're intentionally longer than before: the iframe now waits for its <img> tags to
-  // finish loading before sending that message (see waitForImagesThenReady in
-  // buildUnifiedPDFPreviewDocument), and firing print earlier than that reintroduces the
-  // exact "page grows after pagination was decided -> overflow page" bug this patch fixes.
   loadHandler = () => setTimeout(() => { if (!printed) runPrint(); }, 600);
 
   window.addEventListener('message', messageHandler);
@@ -626,7 +616,10 @@ function hashPDFPreviewSignature() {
       hash = Math.imul(hash, 16777619);
     }
   }
-  return `${_pdfDocumentRevision}:${pages.length}:${(hash >>> 0).toString(16)}`;
+  // Include dark mode and monochrome state in the signature so theme changes trigger refresh
+  const isDark = document.body.classList.contains('dark');
+  const isMonochrome = document.body.classList.contains('photocopy-mode');
+  return `${_pdfDocumentRevision}:${pages.length}:${(hash >>> 0).toString(16)}:dark${isDark ? '1' : '0'}:mono${isMonochrome ? '1' : '0'}`;
 }
 
 function prepareDocumentForPDFPreview(signature) {
@@ -709,8 +702,9 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
 
   const earlySignature = hashPDFPreviewSignature();
-  const earlyIsMonochromeMode = document.body.classList.contains('photocopy-mode');
-  const earlyPreviewMode = earlyIsMonochromeMode ? 'mono' : 'color';
+  const earlyIsDark = document.body.classList.contains('dark');
+  const earlyIsMonochrome = document.body.classList.contains('photocopy-mode');
+  const earlyPreviewMode = `${earlyIsDark ? 'dark' : 'light'}-${earlyIsMonochrome ? 'mono' : 'color'}`;
   if (_pdfLastRenderedSignature === earlySignature && _pdfLastRenderedMode === earlyPreviewMode && (iframe.src || iframe.srcdoc)) {
     if (loadingEl) {
       loadingEl.classList.remove('active');
@@ -741,8 +735,9 @@ async function _runLivePDFIframePreview(requestedToken) {
 
   try {
     const signature = hashPDFPreviewSignature();
-    const isMonochromeMode = document.body.classList.contains('photocopy-mode');
-    const previewMode = isMonochromeMode ? 'mono' : 'color';
+    const isDark = document.body.classList.contains('dark');
+    const isMonochrome = document.body.classList.contains('photocopy-mode');
+    const previewMode = `${isDark ? 'dark' : 'light'}-${isMonochrome ? 'mono' : 'color'}`;
 
     prepareDocumentForPDFPreview(signature);
 
@@ -776,9 +771,10 @@ async function _runLivePDFIframePreview(requestedToken) {
     iframe.onload = onLoad;
     iframe.onerror = onError;
 
+    // Pass dark and monochrome flags to the preview builder
     const previewHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
-      buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) :
-      _buildFallbackPreviewHTML(pageChunks, isMonochromeMode);
+      buildUnifiedPDFPreviewDocument(pageChunks, isMonochrome, isDark) :
+      _buildFallbackPreviewHTML(pageChunks, isMonochrome, isDark);
 
     if (!_setPDFPreviewFrameHTML(iframe, previewHTML)) {
       throw new Error('Unable to initialize PDF preview frame.');
@@ -841,12 +837,21 @@ async function _runLivePDFIframePreview(requestedToken) {
   }
 }
 
-// ===== FALLBACK PREVIEW HTML =====
-function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
-  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode);
+// ===== FALLBACK PREVIEW HTML (Theme-aware) =====
+function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode, isDark) {
+  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode, isDark);
   const pageClassAttr = pageClasses ? ` ${pageClasses}` : '';
+  
+  // Build conditional styles based on dark/monochrome
+  const bgColor = isDark ? '#0a0b14' : '#e5e7eb';
+  const pageBg = isMonochromeMode ? '#ffffff' : (isDark ? '#14152a' : '#ffffff');
+  const textColor = isMonochromeMode ? '#000000' : (isDark ? '#f2f2fb' : '#1a1a1a');
+  const headingColor = isMonochromeMode ? '#000000' : (isDark ? '#a69bff' : '#1e3a8a');
+  const borderColor = isMonochromeMode ? '#000000' : (isDark ? '#3b3d6b' : '#2563eb');
+  const footerColor = isMonochromeMode ? '#000000' : (isDark ? '#9497b8' : '#666666');
+
   const pagesHTML = pageChunks.map((html, idx) =>
-    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}" style="background:${pageBg};color:${textColor};">${html}<div class="pdf-footer" style="color:${footerColor};">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
 
   return `<!DOCTYPE html><html><head>
@@ -856,11 +861,15 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
     ${_collectHostStylesheetLinksHTML()}
     <style>
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      html, body { margin:0; padding:0; background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px; }
+      html, body { margin:0; padding:0; background:${bgColor}; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px; }
       .pdf-page-wrap { width:794px; height:1123px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; contain:layout style paint; content-visibility:auto; contain-intrinsic-size:1123px; }
-      .pdf-page { background:#fff; width:794px; height:1123px; padding:62px 58px 58px 58px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
-      .pdf-footer { position:absolute; bottom:22px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
-      .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; overflow:visible !important; color:#000 !important; }
+      .pdf-page { background:${pageBg}; color:${textColor}; width:794px; height:1123px; padding:62px 58px 58px 58px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
+      .pdf-footer { position:absolute; bottom:22px; left:0; right:0; text-align:center; font-size:10pt; color:${footerColor}; font-family:Arial,sans-serif; }
+      h1{color:${headingColor};border-bottom:2px solid ${borderColor};}
+      h2{color:${isMonochromeMode ? '#000000' : (isDark ? '#a69bff' : '#1e40af')};}
+      h3{color:${isMonochromeMode ? '#000000' : (isDark ? '#9497b8' : '#0369a1')};}
+      .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; overflow:visible !important; color:${textColor} !important; }
+      .katex-eq .katex { color:${textColor} !important; }
       .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
       .katex-display::-webkit-scrollbar { display:none !important; }
       .katex-eq.katex-render-failed { background-color:var(--render-failed-bg,#fee2e2); color:var(--render-failed-color,#dc2626); border:1px solid var(--render-failed-border,#fca5a5); padding:2px 6px; border-radius:4px; display:inline-block; font-weight:600; }
@@ -906,14 +915,6 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
 }
 
 // ===== FORWARD THE HOST APP'S OWN STYLESHEETS INTO THE PRINT/PREVIEW IFRAME =====
-// The print iframe is a fully separate HTML document (srcdoc/blob) that previously only
-// linked the KaTeX stylesheet. Any app-level CSS the editor uses to render color — most
-// notably the "PDF visual format" theme classes (pdf-format-aurora/editorial/midnight/
-// blueprint/sage) applied by applyPDFVisualFormat() in document-editor.js — was never
-// available inside that document, so those colors always silently reverted to the
-// hardcoded default blue palette below once exported. Mirroring the host page's real
-// stylesheets (and the active theme/monochrome classes) into the iframe fixes that for
-// every current and future CSS-driven color, not just this one theme system.
 function _collectHostStylesheetLinksHTML() {
   try {
     const nodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'));
@@ -929,22 +930,32 @@ function _collectHostStylesheetLinksHTML() {
   }
 }
 
-function _getActivePDFFormatClasses(isMonochromeMode) {
+function _getActivePDFFormatClasses(isMonochromeMode, isDark) {
   const classes = [];
   try {
     const formatId = typeof getActivePDFVisualFormat === 'function' ? getActivePDFVisualFormat() : 'default';
     if (formatId && formatId !== 'default') classes.push('pdf-format-' + formatId);
   } catch (_) {}
   if (isMonochromeMode) classes.push('monochrome-document', 'photocopy-mode');
+  if (isDark) classes.push('dark');
   return classes.join(' ');
 }
 
-// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (No exam/MCQ/OMR) =====
-function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
-  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode);
+// ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (Theme-aware) =====
+function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode, isDark) {
+  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode, isDark);
   const pageClassAttr = pageClasses ? ` ${pageClasses}` : '';
+  
+  // Conditional colors
+  const bgColor = isDark ? '#0a0b14' : '#e5e7eb';
+  const pageBg = isMonochromeMode ? '#ffffff' : (isDark ? '#14152a' : '#ffffff');
+  const textColor = isMonochromeMode ? '#000000' : (isDark ? '#f2f2fb' : '#1a1a1a');
+  const headingColor = isMonochromeMode ? '#000000' : (isDark ? '#a69bff' : '#1e3a8a');
+  const borderColor = isMonochromeMode ? '#000000' : (isDark ? '#3b3d6b' : '#2563eb');
+  const footerColor = isMonochromeMode ? '#000000' : (isDark ? '#9497b8' : '#666666');
+  
   const pagesHTML = pageChunks.map((html, idx) =>
-    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}" style="background:${pageBg};color:${textColor};">${html}<div class="pdf-footer" style="color:${footerColor};">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
 
   return `<!DOCTYPE html><html><head>
@@ -956,24 +967,20 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
       html, body { margin:0; padding:0; height:100%; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
-      body { background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
+      body { background:${bgColor}; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px 10px; }
       .pdf-page-wrap { width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; margin:0 auto 20px; overflow:hidden; flex:0 0 auto; }
-      .pdf-page { background:#fff; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
-      .pdf-footer { position:absolute; bottom:${PDF_LAYOUT.footerBottom}px; left:0; right:0; text-align:center; font-size:10pt; color:#666; font-family:Arial,sans-serif; }
-      .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; padding-left:0 !important; padding-right:0 !important; overflow:visible !important; color:#000 !important; }
-      .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
-      .katex-display::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
-      .katex-eq.katex-render-failed { background-color:var(--render-failed-bg,#fee2e2); color:var(--render-failed-color,#dc2626); border:1px solid var(--render-failed-border,#fca5a5); padding:2px 6px; border-radius:4px; display:inline-block; font-weight:600; }
-      .katex-eq.katex-render-failed .katex-fallback { color:var(--render-failed-color,#dc2626); font-weight:600; }
-      h1{font-family:Arial,sans-serif;font-size:22pt;margin-bottom:10pt;color:${isMonochromeMode?'#000':'#1e3a8a'};border-bottom:2px solid ${isMonochromeMode?'#000':'#2563eb'};padding-bottom:4px}
-      h2{font-family:Arial,sans-serif;font-size:16pt;margin:12pt 0 6pt;color:${isMonochromeMode?'#000':'#1e40af'}}
-      h3{font-family:Arial,sans-serif;font-size:13pt;margin:10pt 0 4pt;color:${isMonochromeMode?'#000':'#0369a1'}}
+      .pdf-page { background:${pageBg}; color:${textColor}; width:${PDF_LAYOUT.width}px; height:${PDF_LAYOUT.height}px; padding:${PDF_LAYOUT.padTop}px ${PDF_LAYOUT.padRight}px ${PDF_LAYOUT.padBottom}px ${PDF_LAYOUT.padLeft}px; box-sizing:border-box; position:relative; overflow:hidden; text-align:justify; }
+      .pdf-footer { position:absolute; bottom:${PDF_LAYOUT.footerBottom}px; left:0; right:0; text-align:center; font-size:10pt; color:${footerColor}; font-family:Arial,sans-serif; }
+      h1{font-family:Arial,sans-serif;font-size:22pt;margin-bottom:10pt;color:${headingColor};border-bottom:2px solid ${borderColor};padding-bottom:4px}
+      h2{font-family:Arial,sans-serif;font-size:16pt;margin:12pt 0 6pt;color:${headingColor}}
+      h3{font-family:Arial,sans-serif;font-size:13pt;margin:10pt 0 4pt;color:${headingColor}}
       p{margin-bottom:8pt} ul,ol{margin:6pt 0 8pt 20pt}
-      table{width:100%;border-collapse:collapse;table-layout:fixed;margin:10pt 0} th{background:${isMonochromeMode?'#e5e7eb':'#2563eb'};color:${isMonochromeMode?'#000':'#fff'};padding:8px;border:1px solid #cbd5e1;text-align:left} td{border:1px solid #cbd5e1;padding:6px 8px;word-break:break-word} img{max-width:100%;height:auto;object-fit:contain}
+      table{width:100%;border-collapse:collapse;table-layout:fixed;margin:10pt 0} th{background:${isMonochromeMode ? '#e5e7eb' : (isDark ? '#2a2c4e' : '#2563eb')};color:${isMonochromeMode ? '#000' : (isDark ? '#fff' : '#fff')};padding:8px;border:1px solid ${borderColor};text-align:left} td{border:1px solid ${borderColor};padding:6px 8px;word-break:break-word} img{max-width:100%;height:auto;object-fit:contain}
       pre,code{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
-      .block-example{background:${isMonochromeMode?'#fff':'#f0fdf4'};border-left:4px solid ${isMonochromeMode?'#000':'#10b981'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-definition{background:${isMonochromeMode?'#fff':'#eff6ff'};border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-warning{background:${isMonochromeMode?'#fff':'#fef2f2'};border-left:4px solid ${isMonochromeMode?'#000':'#ef4444'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-important{background:${isMonochromeMode?'#fff':'#fff7ed'};border-left:4px solid ${isMonochromeMode?'#000':'#f97316'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-note{background:${isMonochromeMode?'#fff':'#fdf2f8'};border-left:4px solid ${isMonochromeMode?'#000':'#ec4899'};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
-      .block-accent{background:transparent !important;border:none !important;border-left:4px solid ${isMonochromeMode?'#000':'#3b82f6'} !important;padding:8px 14px;margin:10px 0}.block-solution{background:${isMonochromeMode?'#fff':'#f5f3ff'};border:1px solid ${isMonochromeMode?'#000':'#ddd6fe'};border-radius:8px;padding:14px 16px 10px;margin:14px 0}
+      .block-example{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(16,185,129,0.12)' : '#f0fdf4')};border-left:4px solid ${isMonochromeMode ? '#000' : (isDark ? '#34d399' : '#10b981')};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-definition{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(59,130,246,0.12)' : '#eff6ff')};border-left:4px solid ${isMonochromeMode ? '#000' : (isDark ? '#60a5fa' : '#3b82f6')};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-warning{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(239,68,68,0.12)' : '#fef2f2')};border-left:4px solid ${isMonochromeMode ? '#000' : (isDark ? '#f87171' : '#ef4444')};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-important{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(245,158,11,0.12)' : '#fff7ed')};border-left:4px solid ${isMonochromeMode ? '#000' : (isDark ? '#fbbf24' : '#f97316')};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}.block-note{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(236,72,153,0.12)' : '#fdf2f8')};border-left:4px solid ${isMonochromeMode ? '#000' : (isDark ? '#f472b6' : '#ec4899')};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
+      .block-accent{background:transparent !important;border:none !important;border-left:4px solid ${borderColor} !important;padding:8px 14px;margin:10px 0}.block-solution{background:${isMonochromeMode ? '#fff' : (isDark ? 'rgba(139,92,246,0.12)' : '#f5f3ff')};border:1px solid ${borderColor};border-radius:8px;padding:14px 16px 10px;margin:14px 0}
       .photocopy-mode .quiz-answer-key { background:#fff !important; border-color:#000 !important; }
+      .katex-eq .katex { color:${textColor} !important; }
       @media print { html, body { height:auto !important; overflow:visible !important; -webkit-overflow-scrolling:auto !important; } body{padding:0 !important;background:#fff !important; display:block !important;} .pdf-page-wrap{width:${PDF_LAYOUT.width}px !important;height:${PDF_LAYOUT.height}px !important;margin:0 !important;overflow:hidden !important;page-break-after:always; break-after:page;} .pdf-page-wrap:last-of-type{page-break-after:auto !important; break-after:auto !important;} .pdf-page{transform:none !important;box-shadow:none !important} }
       @media (max-width:850px) { body{padding:8px 0 !important; align-items:center;} .pdf-page-wrap{margin:0 auto 12px; overflow:hidden;} .pdf-page{transform-origin:top left;} }
     </style>
@@ -1041,9 +1048,6 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       return true;
     }
     function waitForImagesThenReady(){
-      // Guard against firing the print-ready signal while <img> elements are still
-      // loading: an image that grows a page's height AFTER pagination was decided is
-      // exactly what pushes overflowing content onto an unplanned extra printed page.
       if (allImagesLoaded()) { notifyPrintReady(); return; }
       var imgs = document.querySelectorAll('img');
       var remaining = 0;
@@ -1055,7 +1059,7 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
         img.addEventListener('error', settle, { once: true });
       });
       if (remaining === 0) { notifyPrintReady(); return; }
-      setTimeout(notifyPrintReady, 1500); // hard safety cap so a broken image can't block printing forever
+      setTimeout(notifyPrintReady, 1500);
     }
     function notifyPrintReady(){
       if (readySent) return;
@@ -1124,14 +1128,6 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  // Force shrink every page to fit.
-  // NOTE: normal body text is only ever allowed to be 12pt (default) or 10pt (compact) —
-  // see shrinkPageToFit() below. We deliberately do not pass a third, more aggressive
-  // steps array here anymore (it used to go down to 66%, i.e. ~7.9pt) because that was
-  // producing random, too-small text in the middle of exported documents. If a page still
-  // overflows at 10pt, it's left slightly overflowing here and handled by the real
-  // pagination step (applyLocalMarginSafetyFixes -> splitOversizedTableToFit / the normal
-  // page-break logic) instead of shrinking text further.
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
@@ -1140,7 +1136,6 @@ async function computeTruePDFPages(htmlOverride) {
     }
   }
 
-  // Filter out completely empty pages
   const pages = pageEls.map(el => ({
     el,
     html: el.innerHTML,
@@ -1287,7 +1282,7 @@ function switchPreviewTab(tabName) {
     const willReuseCache = iframeForCheck && (iframeForCheck.src || iframeForCheck.srcdoc) &&
       typeof hashPDFPreviewSignature === 'function' &&
       hashPDFPreviewSignature() === _pdfLastRenderedSignature &&
-      (document.body.classList.contains('photocopy-mode') ? 'mono' : 'color') === _pdfLastRenderedMode;
+      ((document.body.classList.contains('dark') ? 'dark' : 'light') + '-' + (document.body.classList.contains('photocopy-mode') ? 'mono' : 'color')) === _pdfLastRenderedMode;
     const loadingEl = document.getElementById('pdf-preview-loading');
     if (loadingEl && !willReuseCache) {
       loadingEl.style.display = 'flex';
@@ -1370,13 +1365,6 @@ function autoFitPageWithinMargins(pageEl, createContinuationPage, steps) {
 
 function shrinkPageToFit(pageEl, steps) {
   const wrapper = ensurePageFitWrapper(pageEl);
-  // Normal body text is only ever allowed to be 12pt (100%, the default) or 10pt
-  // (10/12 ≈ 83%) — matching standard word-processor sizing (Word-style 12/10pt). We
-  // intentionally stopped scaling further down through 94%/88%/82%/76%/70%/66%: that
-  // produced random, oddly-small text partway through a document. Anything that still
-  // overflows at 10pt is left to real pagination (a continuation page) rather than
-  // shrinking text more. This does not affect figures/diagrams — their own SVG/image
-  // sizing is handled separately and is fine to vary.
   const shrinkSteps = steps || [1, 10 / 12];
   for (const scale of shrinkSteps) {
     wrapper.style.fontSize = (scale * 100) + '%';
@@ -1551,7 +1539,7 @@ async function splitPlainTextElement(node, currentPage, createPage) {
     return { page, didSplit };
 }
 
-// ===== appendNodeWithPagination (UPDATED: improved pageHasContent check) =====
+// ===== appendNodeWithPagination =====
 async function appendNodeWithPagination(node, currentPage, createPage) {
     if (node.nodeType === Node.TEXT_NODE) {
         if (!node.textContent.trim()) return currentPage;
@@ -1567,7 +1555,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
         return pageHasContent(currentPage) ? createPage() : currentPage;
     }
 
-    // ---- Normal node ----
     const testClone2 = appendClone(currentPage, node);
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(testClone2);
     if (typeof renderAllKatexVisuals === 'function') renderAllKatexVisuals(testClone2);
@@ -1596,7 +1583,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
         return result.page;
     }
 
-    // For non-breakable nodes (IMG, TABLE, SVG), create new page if needed and then add
     if (pageHasContent(currentPage)) currentPage = createPage();
     const finalClone = appendClone(currentPage, node);
     if (typeof processMathEquationsInContainer === 'function') processMathEquationsInContainer(finalClone);
@@ -1604,7 +1590,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
     await waitForImagesToLoad(finalClone);
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(finalClone);
 
-    // If it still doesn't fit, try to shrink the whole page
     if (!pageFits(currentPage)) {
         if (typeof shrinkPageToFit === 'function') {
             shrinkPageToFit(currentPage);
@@ -1612,18 +1597,6 @@ async function appendNodeWithPagination(node, currentPage, createPage) {
     }
 
     return currentPage;
-}
-
-// ===== IMPROVED pageHasContent =====
-function pageHasContent(page) {
-    if (!page) return false;
-    // Check if there's any content besides the footer
-    const clone = page.cloneNode(true);
-    const footer = clone.querySelector('.page-footer-number');
-    if (footer) footer.remove();
-    const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
-    const hasVisual = !!clone.querySelector('img, svg, table, canvas, .katex-eq, .fc-wrapper, .figure-pro, .block-solution');
-    return text.length > 0 || hasVisual;
 }
 
 function appendClone(page, sourceNode) {
@@ -1709,6 +1682,8 @@ window.exportToImagePDF = exportToImagePDF;
 window.exportToWordDocument = exportToWordDocument;
 window.generateLivePDFIframePreview = generateLivePDFIframePreview;
 window.invalidatePDFPreviewCache = invalidatePDFPreviewCache;
+window.hashPDFPreviewSignature = hashPDFPreviewSignature;
+window.prepareDocumentForPDFPreview = prepareDocumentForPDFPreview;
 window.buildUnifiedPDFPreviewDocument = buildUnifiedPDFPreviewDocument;
 window.computeTruePDFPages = computeTruePDFPages;
 window.disposeTruePDFPages = disposeTruePDFPages;
@@ -1725,7 +1700,6 @@ window.shrinkPageToFit = shrinkPageToFit;
 window.ensurePageFitWrapper = ensurePageFitWrapper;
 window.splitOversizedTableToFit = splitOversizedTableToFit;
 window.appendNodeWithPagination = appendNodeWithPagination;
-window.pageHasContent = pageHasContent;
 window.appendClone = appendClone;
 window.cloneElementShell = cloneElementShell;
 window.splitPlainTextElement = splitPlainTextElement;
