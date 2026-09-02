@@ -14,7 +14,141 @@ function displayToastNotification(msg) {
   toastHideTimer = setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// ===== GLOBAL PROGRESS UI (MODERN WHITE DESIGN) =====
+// ============================================================
+// AI-GENERATED BENGALI QUOTES ENGINE
+// ============================================================
+
+const QUOTE_CACHE_KEY = 'ai_bengali_quotes_cache';
+const QUOTE_TIMESTAMP_KEY = 'ai_bengali_quotes_timestamp';
+const QUOTE_CACHE_DAYS = 3;
+const QUOTE_ROTATION_INTERVAL_MS = 6000;
+
+// ---- Seed fallback quotes (also AI-generated, kept as safety net) ----
+const SEED_QUOTES_BENGALI = [
+  { text: 'জীবনটা একটা অসম্পূর্ণ কবিতা, তুমি নিজেই লেখো বাকিটা।', attribution: 'AI' },
+  { text: 'ভালোবাসা মানে আয়নার সামনে দাঁড়িয়ে নিজের চেয়ে বেশি করে অন্যকেই দেখা।', attribution: 'AI' },
+  { text: 'তোমার মনের সমুদ্রে ডুব দাও, তবেই জানবে তুমি কত গভীর।', attribution: 'AI' },
+  { text: 'সাহিত্য হলো সেই আলো, যেখানে অন্ধকারেও পথ দেখা যায়।', attribution: 'AI' },
+  { text: 'পাহাড় যত উঁচু, চূড়ায় দাঁড়ানোর আনন্দ তত বেশি।', attribution: 'AI' },
+  { text: 'শান্তি পেতে হলে যুদ্ধ ছাড়তে হয় না, আত্মার সাথে মিত্রতা করতে হয়।', attribution: 'AI' },
+  { text: 'সময় থেমে থাকে না, কিন্তু ভালোবাসা থেমে গেলে সময় মরে যায়।', attribution: 'AI' },
+  { text: 'স্বপ্ন দেখাটা বোকামি নয়, স্বপ্নকে না দেখাটাই বোকামি।', attribution: 'AI' },
+  { text: 'মানুষ যেমন পাখি, খাঁচা বানিয়ে দেয় মানুষই, আবার উড়তেও শেখায় মানুষই।', attribution: 'AI' },
+  { text: 'আত্মবিশ্বাস হলো সেই অস্ত্র, যা কারো কাছ থেকে চুরি করা যায় না।', attribution: 'AI' },
+  { text: 'নিজের সাথে সৎ থাকো, তাহলে সারা বিশ্ব তোমার সাথে সৎ হবে।', attribution: 'AI' },
+  { text: 'অন্ধকারের পরেই আলো আসে, কিন্তু আলো দেখার জন্য চোখ খোলা রাখতে হয়।', attribution: 'AI' },
+  { text: 'ভালোবাসা শুধু অনুভূতি নয়, তা একটি শিল্প।', attribution: 'AI' },
+  { text: 'জীবনের আসল অর্থ খুঁজে পাওয়া যায় না, বরং নিজেকে দিয়ে তা তৈরি করতে হয়।', attribution: 'AI' },
+  { text: 'মনের শান্তি বাইরে নয়, ভিতরে।', attribution: 'AI' },
+  { text: 'যে নিজেকে চেনে, সে পৃথিবীকে চেনে।', attribution: 'AI' },
+  { text: 'অসম্ভব শব্দটা শুধু সম্ভবের অপেক্ষায় থাকে।', attribution: 'AI' },
+  { text: 'প্রতিটি সূর্যাস্ত নতুন সূর্যোদয়ের প্রতিশ্রুতি দেয়।', attribution: 'AI' },
+  { text: 'মন যদি উদার হয়, পৃথিবীও উদার হয়।', attribution: 'AI' },
+  { text: 'আলোর পথে হাঁটতে গেলে অন্ধকারকে ভয় পাওয়া চলে না।', attribution: 'AI' },
+];
+
+function _getStoredQuotes() {
+  try {
+    const raw = localStorage.getItem(QUOTE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    return null;
+  } catch (_) { return null; }
+}
+
+function _getQuoteTimestamp() {
+  try {
+    const ts = localStorage.getItem(QUOTE_TIMESTAMP_KEY);
+    return ts ? parseInt(ts, 10) : 0;
+  } catch (_) { return 0; }
+}
+
+function _storeQuotes(quotes) {
+  try {
+    localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify(quotes));
+    localStorage.setItem(QUOTE_TIMESTAMP_KEY, String(Date.now()));
+  } catch (_) {}
+}
+
+function _isQuoteCacheStale() {
+  const ts = _getQuoteTimestamp();
+  if (!ts) return true;
+  const days = (Date.now() - ts) / (1000 * 60 * 60 * 24);
+  return days > QUOTE_CACHE_DAYS;
+}
+
+// ---- Silently generate fresh quotes via AI ----
+async function _generateQuotesViaAI() {
+  try {
+    if (typeof callAIAPI !== 'function') return false;
+    const activeModel = typeof getActiveAIModel === 'function' ? getActiveAIModel() : null;
+    if (!activeModel) return false;
+
+    const prompt = `You are a modern Bengali poet. Generate 50 unique, short, heart-touching quotes in Bangla (Bengali). 
+Topics: জীবন (life), ভালোবাসা (love), মন (mind), সাহিত্য (literature), সংগ্রাম (struggle), শান্তি (peace), সৃজনশীলতা (creativity), সময় (time), স্বপ্ন (dream), and আত্মবিশ্বাস (confidence).
+Each quote must be between 10-20 words. Avoid clichés. Make them feel like they were written by a wise friend.
+Output ONLY a valid JSON array of objects with keys: "text" (the quote) and "attribution" (always "AI").
+Example: [{"text": "জীবনটা একটা অসম্পূর্ণ কবিতা...", "attribution": "AI"}]
+Return ONLY the JSON array, no other text.`;
+
+    const result = await callAIAPI([
+      { role: 'system', content: 'You are a Bengali poet. Output only valid JSON.' },
+      { role: 'user', content: prompt }
+    ], { forceJson: true, maxTokens: 4000 });
+
+    let quotes = null;
+    try {
+      const parsed = typeof safeParseAIJson === 'function' ? safeParseAIJson(result.content, null) : JSON.parse(result.content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        quotes = parsed.filter(q => q && q.text && q.text.trim().length > 5);
+      }
+    } catch (_) {}
+
+    if (quotes && quotes.length >= 20) {
+      _storeQuotes(quotes);
+      return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+function _loadQuoteLibrary() {
+  // Check cache first
+  let cached = _getStoredQuotes();
+  if (cached && cached.length >= 10 && !_isQuoteCacheStale()) {
+    return cached;
+  }
+
+  // If stale or missing, try to generate fresh ones in the background
+  if (typeof _generateQuotesViaAI === 'function') {
+    _generateQuotesViaAI().then(success => {
+      if (success) {
+        const fresh = _getStoredQuotes();
+        if (fresh && fresh.length > 0) {
+          // Update the current quote list silently
+          const current = ProgressUI._quotes;
+          if (current && current.length > 0) {
+            ProgressUI._quotes = fresh;
+          }
+        }
+      }
+    }).catch(() => {});
+  }
+
+  // Return cached even if stale (we'll update in background)
+  if (cached && cached.length >= 10) return cached;
+
+  // Final fallback: seed quotes
+  return SEED_QUOTES_BENGALI;
+}
+
+// ============================================================
+// GLOBAL PROGRESS UI (ENHANCED WITH QUOTES & LIVE PREVIEW)
+// ============================================================
+
 const ProgressUI = {
   _interval: null,
   _startTime: 0,
@@ -31,6 +165,11 @@ const ProgressUI = {
   _fileProgressItems: new Map(),
   _pageCount: 0,
   _totalPages: 0,
+  
+  // ---- Quote Engine ----
+  _quotes: [],
+  _quoteInterval: null,
+  _currentQuoteIndex: -1,
 
   _els() {
     return {
@@ -40,11 +179,15 @@ const ProgressUI = {
       fill: document.getElementById('progress-bar-fill'),
       percent: document.getElementById('progress-bar-percent'),
       time: document.getElementById('progress-bar-time'),
-      preview: document.getElementById('progress-live-preview'),
+      preview: document.getElementById('progress-live-preview-scroll'),
       badge: document.getElementById('progress-model-badge'),
       scope: document.getElementById('progress-scope'),
       steps: document.getElementById('progress-steps'),
-      pageCount: document.getElementById('progress-page-count')
+      pageCount: document.getElementById('progress-page-count'),
+      quoteText: document.getElementById('progress-quote-text'),
+      quoteContent: document.getElementById('progress-quote-content'),
+      quoteAttribution: document.getElementById('progress-quote-attribution'),
+      previewPageLabel: document.getElementById('progress-preview-page-label')
     };
   },
 
@@ -127,13 +270,12 @@ const ProgressUI = {
         if (time) time.textContent = `Elapsed ${this._formatTime(elapsed)} • Working…`;
       }
       
-      // Update page count if set
       this._updatePageCountDisplay();
     }, 250);
   },
 
   _updatePageCountDisplay() {
-    const el = document.getElementById('progress-page-count');
+    const el = this._els().pageCount;
     if (!el) return;
     if (this._totalPages > 0) {
       el.textContent = `📄 Page ${this._pageCount} of ${this._totalPages}`;
@@ -143,6 +285,141 @@ const ProgressUI = {
     }
   },
 
+  // ===== QUOTE ENGINE =====
+  _loadQuotes() {
+    const raw = _loadQuoteLibrary();
+    this._quotes = Array.isArray(raw) && raw.length > 0 ? raw : SEED_QUOTES_BENGALI;
+    return this._quotes;
+  },
+
+  _getRandomQuote(excludeIndex) {
+    if (!this._quotes || this._quotes.length === 0) {
+      this._loadQuotes();
+    }
+    const list = this._quotes || SEED_QUOTES_BENGALI;
+    if (list.length === 0) return { text: 'জীবন সুন্দর, মনকে সুন্দর রাখো।', attribution: 'AI' };
+    let idx;
+    let attempts = 0;
+    do {
+      idx = Math.floor(Math.random() * list.length);
+      attempts++;
+    } while (idx === excludeIndex && list.length > 1 && attempts < 20);
+    return list[idx] || list[0];
+  },
+
+  _showQuote(quote) {
+    const { quoteContent, quoteAttribution, quoteText } = this._els();
+    if (!quoteContent || !quoteText) return;
+    
+    // Fade out
+    quoteText.classList.remove('visible');
+    
+    setTimeout(() => {
+      quoteContent.textContent = quote.text || 'জীবন সুন্দর, মনকে সুন্দর রাখো।';
+      if (quoteAttribution) {
+        quoteAttribution.textContent = quote.attribution ? `— ${quote.attribution}` : '— AI';
+      }
+      // Fade in
+      quoteText.classList.add('visible');
+    }, 300);
+  },
+
+  _rotateQuote() {
+    if (!this._quotes || this._quotes.length === 0) {
+      this._loadQuotes();
+    }
+    const quote = this._getRandomQuote(this._currentQuoteIndex);
+    this._currentQuoteIndex = this._quotes.indexOf(quote);
+    this._showQuote(quote);
+  },
+
+  _startQuoteRotation() {
+    this._stopQuoteRotation();
+    // Load quotes if not already loaded
+    if (!this._quotes || this._quotes.length === 0) {
+      this._loadQuotes();
+    }
+    // Show first quote immediately
+    const firstQuote = this._getRandomQuote(-1);
+    this._currentQuoteIndex = this._quotes.indexOf(firstQuote);
+    this._showQuote(firstQuote);
+    // Start interval
+    this._quoteInterval = setInterval(() => {
+      this._rotateQuote();
+    }, QUOTE_ROTATION_INTERVAL_MS);
+  },
+
+  _stopQuoteRotation() {
+    if (this._quoteInterval) {
+      clearInterval(this._quoteInterval);
+      this._quoteInterval = null;
+    }
+  },
+
+  // ===== LIVE PREVIEW =====
+  updateLivePreview(html, pageNumber, totalPages) {
+    const scrollContainer = this._els().preview;
+    const pageLabel = this._els().previewPageLabel;
+    if (!scrollContainer) return;
+
+    // Update page counter
+    this._pageCount = pageNumber || this._pageCount;
+    this._totalPages = totalPages || this._totalPages;
+    this._updatePageCountDisplay();
+    if (pageLabel) {
+      pageLabel.textContent = totalPages ? `Page ${pageNumber || 1} of ${totalPages}` : `Page ${pageNumber || 1}`;
+    }
+
+    // If no HTML, clear the preview
+    if (!html || !html.trim()) {
+      scrollContainer.innerHTML = '';
+      return;
+    }
+
+    // Create a scaled A4 preview
+    const previewPage = document.createElement('div');
+    previewPage.className = 'doc-page-canvas';
+    previewPage.style.transform = 'scale(0.34)';
+    previewPage.style.transformOrigin = 'top left';
+    previewPage.style.margin = '0';
+    previewPage.style.width = '794px';
+    previewPage.style.height = '1123px';
+    previewPage.style.maxHeight = '1123px';
+    previewPage.style.padding = '40px 36px 36px 36px';
+    previewPage.style.fontSize = '10pt';
+    previewPage.style.lineHeight = '1.5';
+    previewPage.style.overflow = 'hidden';
+    previewPage.style.boxShadow = '0 2px 12px rgba(0,0,0,0.10)';
+    previewPage.style.background = '#fff';
+    previewPage.style.color = '#1a1a1a';
+    previewPage.style.pointerEvents = 'none';
+    previewPage.style.flexShrink = '0';
+    previewPage.innerHTML = html;
+
+    // Remove any existing footers
+    previewPage.querySelectorAll('.page-footer-number').forEach(f => f.remove());
+
+    // Clear and append
+    scrollContainer.innerHTML = '';
+    scrollContainer.appendChild(previewPage);
+
+    // Try to render math in the preview
+    if (typeof processMathEquationsInContainer === 'function') {
+      try {
+        processMathEquationsInContainer(previewPage);
+      } catch (_) {}
+    }
+    if (typeof renderAllKatexVisuals === 'function') {
+      try {
+        renderAllKatexVisuals(previewPage);
+      } catch (_) {}
+    }
+
+    // Scroll to top
+    scrollContainer.scrollTop = 0;
+  },
+
+  // ===== SHOW =====
   show(title, subtitle) {
     const e = this._els();
     e.overlay.style.display = 'flex';
@@ -166,14 +443,24 @@ const ProgressUI = {
     this._totalPages = 0;
     this._setPercent(0, true);
     this._fileProgressItems.clear();
+    
+    // Clear preview
     if (e.preview) e.preview.innerHTML = '';
     this._previewContainer = e.preview;
+    
+    // Reset steps
     this._setVisualStage(1);
     this._updatePageCountDisplay();
+
+    // Start quote rotation
+    this._startQuoteRotation();
 
     const cancel = document.getElementById('cancel-processing-btn');
     if (cancel) cancel.disabled = false;
     if (typeof resetCancellationState === 'function') resetCancellationState();
+
+    // Start ticker
+    this._startTicker();
   },
 
   setLabel(t) {
@@ -247,29 +534,18 @@ const ProgressUI = {
     if (e.fill) e.fill.classList.remove('indeterminate');
     if (e.time) e.time.textContent = `Done • ${this._elapsed()}`;
     this._updatePageCountDisplay();
+    // Stop quote rotation
+    this._stopQuoteRotation();
+    // Show a final quote
+    const finalQuote = this._getRandomQuote(this._currentQuoteIndex);
+    this._showQuote(finalQuote);
   },
 
   setActiveModel(name) {
     const e = this._els().badge;
-    if (e) e.textContent = name ? 'Model: ' + name : '';
+    if (e) e.textContent = name ? '🤖 ' + name : '';
   },
 
-  updatePausedState() {},
-
-  hide() {
-    if (this._interval) { clearInterval(this._interval);
-      this._interval = null; }
-    const e = this._els();
-    e.overlay.style.display = 'none';
-    if (e.badge) e.badge.textContent = '';
-    if (e.scope) e.scope.textContent = '';
-    if (e.fill) e.fill.classList.remove('indeterminate');
-    this._pageCount = 0;
-    this._totalPages = 0;
-    this._updatePageCountDisplay();
-  },
-
-  // === PDF PAGE COUNT TRACKING ===
   setPageCount(current, total) {
     this._pageCount = Math.max(0, Number(current) || 0);
     this._totalPages = Math.max(0, Number(total) || 0);
@@ -280,10 +556,14 @@ const ProgressUI = {
     if (this._totalPages > 0 && this._pageCount < this._totalPages) {
       this._pageCount++;
       this._updatePageCountDisplay();
+      const label = this._els().previewPageLabel;
+      if (label) {
+        label.textContent = `Page ${this._pageCount} of ${this._totalPages}`;
+      }
     }
   },
 
-  // === FILE PROGRESS ===
+  // ===== FILE PROGRESS (kept for OCR) =====
   addFileProgress(key, fileName, phase = 'Queued', meta = '') {
     if (!this._previewContainer) return null;
     const existing = this._fileProgressItems.get(key);
@@ -347,6 +627,20 @@ const ProgressUI = {
   clearPreview() {
     if (this._previewContainer) this._previewContainer.innerHTML = '';
     this._fileProgressItems.clear();
+  },
+
+  hide() {
+    if (this._interval) { clearInterval(this._interval);
+      this._interval = null; }
+    this._stopQuoteRotation();
+    const e = this._els();
+    e.overlay.style.display = 'none';
+    if (e.badge) e.badge.textContent = '';
+    if (e.scope) e.scope.textContent = '';
+    if (e.fill) e.fill.classList.remove('indeterminate');
+    this._pageCount = 0;
+    this._totalPages = 0;
+    this._updatePageCountDisplay();
   }
 };
 
@@ -378,6 +672,14 @@ function toggleDarkMode() {
     TAB_MANAGER._captureCurrentState(TAB_MANAGER.activeId);
     TAB_MANAGER._persist();
   }
+  // Trigger PDF preview refresh if visible
+  if (typeof invalidatePDFPreviewCache === 'function') {
+    invalidatePDFPreviewCache();
+    const pdfView = document.getElementById('pdf-view-container');
+    if (pdfView && pdfView.style.display !== 'none' && typeof generateLivePDFIframePreview === 'function') {
+      generateLivePDFIframePreview();
+    }
+  }
 }
 
 // ===== MODE BUTTON =====
@@ -408,6 +710,14 @@ function togglePhotocopyMode() {
   if (typeof TAB_MANAGER !== 'undefined' && TAB_MANAGER.activeId) {
     TAB_MANAGER._captureCurrentState(TAB_MANAGER.activeId);
     TAB_MANAGER._persist();
+  }
+  // Trigger PDF preview refresh if visible
+  if (typeof invalidatePDFPreviewCache === 'function') {
+    invalidatePDFPreviewCache();
+    const pdfView = document.getElementById('pdf-view-container');
+    if (pdfView && pdfView.style.display !== 'none' && typeof generateLivePDFIframePreview === 'function') {
+      generateLivePDFIframePreview();
+    }
   }
   displayToastNotification(isNowMonochrome ? 'Monochrome Mode Enabled' : 'Color Mode Enabled');
 }
@@ -510,11 +820,15 @@ function promptForPageRange(totalPages) {
       resolve(null);
       return;
     }
-    document.getElementById('range-start').value = 1;
-    document.getElementById('range-end').value = totalPages;
+    const startInput = document.getElementById('range-start');
+    const endInput = document.getElementById('range-end');
+    const badge = document.getElementById('page-range-total-badge');
+    if (startInput) startInput.value = 1;
+    if (endInput) endInput.value = totalPages;
+    if (badge) badge.textContent = `Total: ${totalPages} pages`;
+    modal.dataset.totalPages = totalPages;
     modal.style.display = 'flex';
     pageRangeResolve = resolve;
-    modal.dataset.totalPages = totalPages;
   });
 }
 
@@ -543,7 +857,7 @@ function confirmPageRange() {
   }
 }
 
-// ===== EDIT PAGE MODAL =====
+// ===== EDIT PAGE MODAL (Enhanced with chip preview) =====
 let _editModalResolve = null;
 
 function openEditPageModal() {
@@ -554,10 +868,37 @@ function openEditPageModal() {
       return;
     }
     const input = document.getElementById('edit-page-input');
-    input.value = '';
+    const hint = document.getElementById('edit-page-hint');
+    const chips = document.getElementById('edit-page-chips');
+    
+    // Show total pages
+    const totalPages = document.querySelectorAll('.doc-page-canvas').length || 0;
+    if (hint) hint.textContent = `Document has ${totalPages} page${totalPages !== 1 ? 's' : ''}`;
+    
+    // Clear previous
+    if (input) input.value = '';
+    if (chips) chips.innerHTML = '';
+    
+    // Add live chip preview on input
+    if (input) {
+      input.oninput = function() {
+        const raw = this.value.trim();
+        if (!chips) return;
+        chips.innerHTML = '';
+        if (!raw) return;
+        const numbers = raw.split(/\s+/).filter(p => p.length > 0).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0);
+        numbers.forEach(num => {
+          const chip = document.createElement('span');
+          chip.className = 'page-chip';
+          chip.textContent = num;
+          chips.appendChild(chip);
+        });
+      };
+    }
+    
     modal.style.display = 'flex';
     _editModalResolve = resolve;
-    setTimeout(() => input.focus(), 100);
+    setTimeout(() => { if (input) input.focus(); }, 100);
   });
 }
 
@@ -670,6 +1011,7 @@ async function waitWhilePaused() {
 // ============================================================
 // WINDOW EXPOSURE – UI Helpers
 // ============================================================
+window.ProgressUI = ProgressUI;
 window.toggleDarkMode = toggleDarkMode;
 window.applyCurrentTheme = applyCurrentTheme;
 window.displayToastNotification = displayToastNotification;
