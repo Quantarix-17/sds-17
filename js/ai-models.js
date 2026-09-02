@@ -36,6 +36,16 @@ function getActiveAIModel() {
   return AI_MODELS_STATE.models.find(m => m.id === AI_MODELS_STATE.activeModelId) || null;
 }
 
+// ===== FIND A GEMINI MODEL (for Google Search grounding / Vision OCR fallback) =====
+// Prefers the currently active model if it's Gemini, otherwise falls back to the
+// first configured Gemini model. Returns null if no Gemini model is configured.
+function findGeminiModelConfig() {
+  const active = getActiveAIModel();
+  if (active && active.apiType === 'gemini') return active;
+  const list = AI_MODELS_STATE.models || [];
+  return list.find(m => m.apiType === 'gemini') || null;
+}
+
 function generateModelId() {
   return 'model_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -122,8 +132,9 @@ function readAIModelForm() {
   const apiKey = document.getElementById('ai-model-key-input')?.value.trim() || '';
   const modelId = document.getElementById('ai-model-id-input')?.value.trim() || '';
   const supportsJson = document.getElementById('ai-model-json-checkbox')?.checked !== false;
+  const enableGoogleSearch = document.getElementById('ai-model-search-checkbox')?.checked !== false;
   const apiType = document.getElementById('ai-model-api-type-select')?.value || 'openai';
-  return { name, apiUrl, apiKey, modelId, supportsJson, supportsVision: false, apiType };
+  return { name, apiUrl, apiKey, modelId, supportsJson, supportsVision: false, enableGoogleSearch, apiType };
 }
 
 function clearAIModelForm() {
@@ -133,6 +144,8 @@ function clearAIModelForm() {
   });
   const jsonCheckbox = document.getElementById('ai-model-json-checkbox');
   if (jsonCheckbox) jsonCheckbox.checked = true;
+  const searchCheckbox = document.getElementById('ai-model-search-checkbox');
+  if (searchCheckbox) searchCheckbox.checked = true;
   const statusEl = document.getElementById('ai-model-add-status');
   if (statusEl) { statusEl.innerHTML = '';
     statusEl.className = 'ai-model-add-status'; }
@@ -184,6 +197,7 @@ function saveNewAIModel(form, status, statusMessage) {
     modelId: form.modelId,
     supportsJson: form.supportsJson !== false,
     supportsVision: form.supportsVision !== false,
+    enableGoogleSearch: form.enableGoogleSearch !== false,
     apiType: form.apiType || 'openai',
     status: status || 'idle',
     statusMessage: statusMessage || '',
@@ -214,6 +228,7 @@ function exportAIModels() {
       modelId: m.modelId,
       supportsJson: m.supportsJson !== false,
       supportsVision: m.supportsVision !== false,
+      enableGoogleSearch: m.enableGoogleSearch !== false,
       apiType: m.apiType || 'openai',
       status: m.status || 'idle',
       statusMessage: m.statusMessage || '',
@@ -255,6 +270,7 @@ function importAIModels(fileList) {
           modelId: m.modelId,
           supportsJson: m.supportsJson !== false,
           supportsVision: m.supportsVision !== false,
+          enableGoogleSearch: m.enableGoogleSearch !== false,
           apiType: m.apiType || 'openai',
           status: m.status || 'idle',
           statusMessage: m.statusMessage || '',
@@ -386,6 +402,7 @@ function renderAIModelsListInModal() {
           <span class="info-label">Model ID</span><span class="info-value">${escapeHTML(m.modelId)}</span>
           <span class="info-label">API URL</span><span class="info-value">${escapeHTML(m.apiUrl)}</span>
           <span class="info-label">API Type</span><span class="info-value">${escapeHTML(m.apiType || 'openai')}</span>
+          ${m.apiType === 'gemini' ? `<span class="info-label">Google Search</span><span class="info-value">${m.enableGoogleSearch !== false ? 'Enabled' : 'Disabled'}</span>` : ''}
           <span class="info-label">Status</span><span class="info-value">${escapeHTML(m.statusMessage || 'OK')}</span>
         </div>
       </div>
@@ -588,6 +605,7 @@ window.handleAddNewAIModel = handleAddNewAIModel;
 window.loadAIModelsState = loadAIModelsState;
 window.saveAIModelsState = saveAIModelsState;
 window.getActiveAIModel = getActiveAIModel;
+window.findGeminiModelConfig = findGeminiModelConfig;
 window.setActiveAIModel = setActiveAIModel;
 window.testAIModelConnection = testAIModelConnection;
 window.renderAIModelSelectBar = renderAIModelSelectBar;
