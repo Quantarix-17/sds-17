@@ -78,7 +78,13 @@ const PDF_LAYOUT = Object.freeze({
 const EDITOR_A4_WIDTH = 794;
 const EDITOR_A4_HEIGHT = 1123;
 const EDITOR_A4_CONTENT_HEIGHT = 1000;
-const EDITOR_A4_FIT_STEPS = [1, 0.97, 0.94, 0.91, 0.88, 0.85, 0.82, 0.78, 0.74];
+// Normal body text is only ever allowed to be 12pt (default, "Word-style") or 10pt
+// (compact fallback) — NOT a continuous scale. The old array here
+// ([1, 0.97, 0.94, ... 0.74] applied against a 12pt base) produced odd in-between sizes
+// like 11.64pt, 10.92pt, down to 8.88pt, which is why normal paragraph text sometimes
+// looked randomly tiny in the middle of a document. Figures/images/tables are handled
+// separately in tightenPageContentToA4() and are still allowed to resize freely.
+const EDITOR_A4_TEXT_SIZES_PT = [12, 10];
 
 // ========================================================================
 // AI THINKING POLICY
