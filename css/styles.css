@@ -15,6 +15,13 @@
   --accent-gradient-soft: linear-gradient(135deg, rgba(87, 81, 232, 0.12) 0%, rgba(192, 38, 211, 0.12) 100%);
   --danger-color: #f0335a;
   --success-color: #16b981;
+  /* Broken-equation indicator (shown when a math formula fails to render). Kept as
+     variables — rather than hardcoded hex values with !important stacked on every
+     property — so this can actually be changed (theme, print mode, a future "pick your
+     own error color" setting, etc.) instead of always forcing the exact same red. */
+  --render-failed-bg: #fee2e2;
+  --render-failed-color: #dc2626;
+  --render-failed-border: #fca5a5;
   --shadow-sm: 0 1px 2px rgba(20, 21, 43, 0.06);
   --shadow-md: 0 8px 20px -6px rgba(20, 21, 43, 0.12), 0 2px 8px -2px rgba(20, 21, 43, 0.06);
   --shadow-lg: 0 20px 40px -12px rgba(20, 21, 43, 0.20), 0 6px 16px -4px rgba(20, 21, 43, 0.10);
@@ -39,6 +46,9 @@
   --border-color: #262845;
   --primary-light: rgba(139, 121, 255, 0.16);
   --shadow-glow: 0 0 0 4px rgba(145, 130, 255, 0.20);
+  --render-failed-bg: rgba(220, 38, 38, 0.18);
+  --render-failed-color: #ff8f8f;
+  --render-failed-border: rgba(252, 165, 165, 0.4);
 }
 
 * {
@@ -3901,28 +3911,25 @@ body:not(.exam-document) .omr-sheet-page {
   transition: opacity 0.2s var(--ease);
 }
 
-/* ===== RENDER FAILURE STYLING (RED) ===== */
+/* ===== RENDER FAILURE STYLING =====
+   Uses the --render-failed-* variables above instead of hardcoded hex values, and no
+   longer stacks !important on every property. It still defaults to red (an error state
+   should read as an error), but it's now a normal, overridable default rather than a
+   value nothing else — a theme, print/monochrome mode, or a future per-document color
+   choice — can ever change. To use a different color, override the three
+   --render-failed-* variables (globally in :root/.dark, or scoped to a container). */
 .katex-eq.katex-render-failed {
-  background-color: #fee2e2 !important;
-  color: #dc2626 !important;
-  border: 1px solid #fca5a5 !important;
-  padding: 2px 6px !important;
-  border-radius: 4px !important;
-  display: inline-block !important;
-  font-weight: 600 !important;
+  background-color: var(--render-failed-bg);
+  color: var(--render-failed-color);
+  border: 1px solid var(--render-failed-border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  font-weight: 600;
 }
 .katex-eq.katex-render-failed .katex-fallback {
-  color: #dc2626 !important;
-  font-weight: 600 !important;
+  color: var(--render-failed-color);
+  font-weight: 600;
 }
-/* Original failure colors are tuned for a light background; on dark mode
-   the same red-on-light-pink combo loses contrast against the surrounding
-   page, so give it a dark-theme-aware palette. */
-.dark .katex-eq.katex-render-failed {
-  background-color: rgba(220, 38, 38, 0.18) !important;
-  color: #ff8f8f !important;
-  border-color: rgba(252, 165, 165, 0.4) !important;
-}
-.dark .katex-eq.katex-render-failed .katex-fallback {
-  color: #ff8f8f !important;
-}
+/* .dark overrides --render-failed-* directly (see the :root/.dark variable block above),
+   so no separate dark-mode color rule is needed here anymore. */
