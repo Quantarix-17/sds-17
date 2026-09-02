@@ -257,7 +257,18 @@ async function exportToHighQualityPDF(btn) {
   try {
     const signature = typeof hashPDFPreviewSignature === 'function' ? hashPDFPreviewSignature() : '';
     if (typeof prepareDocumentForPDFPreview === 'function') prepareDocumentForPDFPreview(signature);
-    const pageChunks = typeof computeTruePDFPageChunks === 'function' ? await computeTruePDFPageChunks({ signature, allowCache: true }) : [];
+    // NOTE: True PDF now reuses the SAME already-paginated editor pages that the
+    // on-screen Editor/Preview tabs show (_collectRenderableEditorPages), instead of
+    // recomputing page breaks from scratch via computeTruePDFPageChunks(). Running two
+    // independent pagination algorithms (the live editor's vs. computeTruePDFPages'
+    // own appendNodeWithPagination/pageFits pass) could disagree by a few pixels near a
+    // page boundary, which is what produced the blank page followed by an extra page at
+    // the end. Reusing the editor's own page boundaries removes that entire class of bug.
+    let pageChunks = typeof _collectRenderableEditorPages === 'function' ?
+      _collectRenderableEditorPages().map(page => page.innerHTML) : [];
+    if (!pageChunks.length && typeof computeTruePDFPageChunks === 'function') {
+      pageChunks = await computeTruePDFPageChunks({ signature, allowCache: true });
+    }
     const printHTML = typeof buildUnifiedPDFPreviewDocument === 'function' ?
       buildUnifiedPDFPreviewDocument(pageChunks, document.body.classList.contains('photocopy-mode')) :
       '';
@@ -304,11 +315,16 @@ async function exportToHighQualityPDF(btn) {
   messageHandler = (e) => {
     if (e.source === iframe.contentWindow && e.data === 'pdf-iframe-ready') runPrint();
   };
-  loadHandler = () => setTimeout(() => { if (!printed) runPrint(); }, 80);
+  // These are both fallbacks in case the 'pdf-iframe-ready' postMessage never arrives.
+  // They're intentionally longer than before: the iframe now waits for its <img> tags to
+  // finish loading before sending that message (see waitForImagesThenReady in
+  // buildUnifiedPDFPreviewDocument), and firing print earlier than that reintroduces the
+  // exact "page grows after pagination was decided -> overflow page" bug this patch fixes.
+  loadHandler = () => setTimeout(() => { if (!printed) runPrint(); }, 600);
 
   window.addEventListener('message', messageHandler);
   iframe.addEventListener('load', loadHandler, { once: true });
-  timeoutId = setTimeout(() => runPrint(), 1800);
+  timeoutId = setTimeout(() => runPrint(), 3500);
 }
 
 // ===== IMAGE PDF (RASTERIZED) =====
@@ -827,14 +843,17 @@ async function _runLivePDFIframePreview(requestedToken) {
 
 // ===== FALLBACK PREVIEW HTML =====
 function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
+  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode);
+  const pageClassAttr = pageClasses ? ` ${pageClasses}` : '';
   const pagesHTML = pageChunks.map((html, idx) =>
-    `<div class="pdf-page-wrap"><div class="pdf-page">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
 
   return `<!DOCTYPE html><html><head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    ${_collectHostStylesheetLinksHTML()}
     <style>
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       html, body { margin:0; padding:0; background:#e5e7eb; font-family:'Times New Roman',serif; line-height:1.6; font-size:12pt; display:flex; flex-direction:column; align-items:center; padding:20px; }
@@ -844,8 +863,8 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
       .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; overflow:visible !important; color:#000 !important; }
       .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
       .katex-display::-webkit-scrollbar { display:none !important; }
-      .katex-eq.katex-render-failed { background-color:#fee2e2 !important; color:#dc2626 !important; border:1px solid #fca5a5 !important; padding:2px 6px !important; border-radius:4px !important; display:inline-block !important; font-weight:600 !important; }
-      .katex-eq.katex-render-failed .katex-fallback { color:#dc2626 !important; font-weight:600 !important; }
+      .katex-eq.katex-render-failed { background-color:var(--render-failed-bg,#fee2e2); color:var(--render-failed-color,#dc2626); border:1px solid var(--render-failed-border,#fca5a5); padding:2px 6px; border-radius:4px; display:inline-block; font-weight:600; }
+      .katex-eq.katex-render-failed .katex-fallback { color:var(--render-failed-color,#dc2626); font-weight:600; }
       @media (max-width:850px) { body{padding:8px 0 !important;} .pdf-page-wrap { overflow:hidden; margin:0 auto 12px; } .pdf-page { transform-origin:top left; } }
       @media print { html, body { height:auto !important; overflow:visible !important; } .pdf-page-wrap { content-visibility:visible !important; contain-intrinsic-size:auto !important; page-break-after:always; margin:0; } body { padding:0; background:#fff; } }
     </style>
@@ -886,16 +905,53 @@ function _buildFallbackPreviewHTML(pageChunks, isMonochromeMode) {
   <\/script></body></html>`;
 }
 
+// ===== FORWARD THE HOST APP'S OWN STYLESHEETS INTO THE PRINT/PREVIEW IFRAME =====
+// The print iframe is a fully separate HTML document (srcdoc/blob) that previously only
+// linked the KaTeX stylesheet. Any app-level CSS the editor uses to render color — most
+// notably the "PDF visual format" theme classes (pdf-format-aurora/editorial/midnight/
+// blueprint/sage) applied by applyPDFVisualFormat() in document-editor.js — was never
+// available inside that document, so those colors always silently reverted to the
+// hardcoded default blue palette below once exported. Mirroring the host page's real
+// stylesheets (and the active theme/monochrome classes) into the iframe fixes that for
+// every current and future CSS-driven color, not just this one theme system.
+function _collectHostStylesheetLinksHTML() {
+  try {
+    const nodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'));
+    return nodes.map(node => {
+      if (node.tagName === 'LINK') {
+        if (!node.href) return '';
+        return `<link rel="stylesheet" href="${node.href}">`;
+      }
+      return `<style>${node.textContent || ''}</style>`;
+    }).join('\n');
+  } catch (_) {
+    return '';
+  }
+}
+
+function _getActivePDFFormatClasses(isMonochromeMode) {
+  const classes = [];
+  try {
+    const formatId = typeof getActivePDFVisualFormat === 'function' ? getActivePDFVisualFormat() : 'default';
+    if (formatId && formatId !== 'default') classes.push('pdf-format-' + formatId);
+  } catch (_) {}
+  if (isMonochromeMode) classes.push('monochrome-document', 'photocopy-mode');
+  return classes.join(' ');
+}
+
 // ===== BUILD UNIFIED PDF PREVIEW DOCUMENT (No exam/MCQ/OMR) =====
 function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
+  const pageClasses = _getActivePDFFormatClasses(isMonochromeMode);
+  const pageClassAttr = pageClasses ? ` ${pageClasses}` : '';
   const pagesHTML = pageChunks.map((html, idx) =>
-    `<div class="pdf-page-wrap"><div class="pdf-page">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
+    `<div class="pdf-page-wrap"><div class="pdf-page doc-page-canvas${pageClassAttr}">${html}<div class="pdf-footer">Page ${idx + 1} of ${pageChunks.length}</div></div></div>`
   ).join('');
 
   return `<!DOCTYPE html><html><head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    ${_collectHostStylesheetLinksHTML()}
     <style>
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -907,8 +963,8 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       .katex-eq { display:inline-block; max-width:100%; background:transparent !important; border:none !important; box-shadow:none !important; padding-left:0 !important; padding-right:0 !important; overflow:visible !important; color:#000 !important; }
       .katex-display { overflow:visible !important; max-width:100%; scrollbar-width:none !important; }
       .katex-display::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
-      .katex-eq.katex-render-failed { background-color:#fee2e2 !important; color:#dc2626 !important; border:1px solid #fca5a5 !important; padding:2px 6px !important; border-radius:4px !important; display:inline-block !important; font-weight:600 !important; }
-      .katex-eq.katex-render-failed .katex-fallback { color:#dc2626 !important; font-weight:600 !important; }
+      .katex-eq.katex-render-failed { background-color:var(--render-failed-bg,#fee2e2); color:var(--render-failed-color,#dc2626); border:1px solid var(--render-failed-border,#fca5a5); padding:2px 6px; border-radius:4px; display:inline-block; font-weight:600; }
+      .katex-eq.katex-render-failed .katex-fallback { color:var(--render-failed-color,#dc2626); font-weight:600; }
       h1{font-family:Arial,sans-serif;font-size:22pt;margin-bottom:10pt;color:${isMonochromeMode?'#000':'#1e3a8a'};border-bottom:2px solid ${isMonochromeMode?'#000':'#2563eb'};padding-bottom:4px}
       h2{font-family:Arial,sans-serif;font-size:16pt;margin:12pt 0 6pt;color:${isMonochromeMode?'#000':'#1e40af'}}
       h3{font-family:Arial,sans-serif;font-size:13pt;margin:10pt 0 4pt;color:${isMonochromeMode?'#000':'#0369a1'}}
@@ -977,6 +1033,30 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
       });
     }
     var readySent = false;
+    function allImagesLoaded(){
+      var imgs = document.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        if (!imgs[i].complete || imgs[i].naturalWidth === 0) return false;
+      }
+      return true;
+    }
+    function waitForImagesThenReady(){
+      // Guard against firing the print-ready signal while <img> elements are still
+      // loading: an image that grows a page's height AFTER pagination was decided is
+      // exactly what pushes overflowing content onto an unplanned extra printed page.
+      if (allImagesLoaded()) { notifyPrintReady(); return; }
+      var imgs = document.querySelectorAll('img');
+      var remaining = 0;
+      var settle = function(){ remaining--; if (remaining <= 0) notifyPrintReady(); };
+      Array.prototype.forEach.call(imgs, function(img){
+        if (img.complete && img.naturalWidth > 0) return;
+        remaining++;
+        img.addEventListener('load', settle, { once: true });
+        img.addEventListener('error', settle, { once: true });
+      });
+      if (remaining === 0) { notifyPrintReady(); return; }
+      setTimeout(notifyPrintReady, 1500); // hard safety cap so a broken image can't block printing forever
+    }
     function notifyPrintReady(){
       if (readySent) return;
       readySent = true;
@@ -1002,11 +1082,11 @@ function buildUnifiedPDFPreviewDocument(pageChunks, isMonochromeMode) {
     }
     window.addEventListener('orientationchange', function(){ setTimeout(fitPagesToScreen, 200); });
     if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(notifyPrintReady).catch(notifyPrintReady);
+      document.fonts.ready.then(waitForImagesThenReady).catch(waitForImagesThenReady);
     } else {
-      window.addEventListener('load', notifyPrintReady, { once: true });
+      window.addEventListener('load', waitForImagesThenReady, { once: true });
     }
-    notifyPrintReady();
+    waitForImagesThenReady();
   <\/script></body></html>`;
 }
 
@@ -1044,17 +1124,19 @@ async function computeTruePDFPages(htmlOverride) {
     if (i % (typeof isMobilePreviewMode === 'function' && isMobilePreviewMode() ? 2 : 6) === 5) await new Promise(r => setTimeout(r, 0));
   }
 
-  // Force shrink every page to fit
+  // Force shrink every page to fit.
+  // NOTE: normal body text is only ever allowed to be 12pt (default) or 10pt (compact) —
+  // see shrinkPageToFit() below. We deliberately do not pass a third, more aggressive
+  // steps array here anymore (it used to go down to 66%, i.e. ~7.9pt) because that was
+  // producing random, too-small text in the middle of exported documents. If a page still
+  // overflows at 10pt, it's left slightly overflowing here and handled by the real
+  // pagination step (applyLocalMarginSafetyFixes -> splitOversizedTableToFit / the normal
+  // page-break logic) instead of shrinking text further.
   for (const page of pageEls) {
     if (typeof shrinkOverflowingKatexEquations === 'function') shrinkOverflowingKatexEquations(page);
     if (typeof waitForPDFLayoutStable === 'function') await waitForPDFLayoutStable(page);
     if (typeof shrinkPageToFit === 'function') {
       shrinkPageToFit(page);
-    }
-    if (!pageFits(page)) {
-      if (typeof shrinkPageToFit === 'function') {
-        shrinkPageToFit(page, [1, 0.92, 0.85, 0.78, 0.72, 0.66]);
-      }
     }
   }
 
@@ -1288,10 +1370,17 @@ function autoFitPageWithinMargins(pageEl, createContinuationPage, steps) {
 
 function shrinkPageToFit(pageEl, steps) {
   const wrapper = ensurePageFitWrapper(pageEl);
-  const shrinkSteps = steps || [1, 0.94, 0.88, 0.82, 0.76, 0.7];
+  // Normal body text is only ever allowed to be 12pt (100%, the default) or 10pt
+  // (10/12 ≈ 83%) — matching standard word-processor sizing (Word-style 12/10pt). We
+  // intentionally stopped scaling further down through 94%/88%/82%/76%/70%/66%: that
+  // produced random, oddly-small text partway through a document. Anything that still
+  // overflows at 10pt is left to real pagination (a continuation page) rather than
+  // shrinking text more. This does not affect figures/diagrams — their own SVG/image
+  // sizing is handled separately and is fine to vary.
+  const shrinkSteps = steps || [1, 10 / 12];
   for (const scale of shrinkSteps) {
     wrapper.style.fontSize = (scale * 100) + '%';
-    wrapper.style.lineHeight = String(1.6 * Math.max(scale, 0.85));
+    wrapper.style.lineHeight = String(scale >= 0.99 ? 1.6 : 1.5);
     if (pageFits(pageEl)) return true;
   }
   return pageFits(pageEl);
