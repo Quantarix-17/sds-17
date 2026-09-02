@@ -442,6 +442,70 @@ async function recognizeImageWithOcr(imageSource) {
   }
 }
 
+// ===== GEMINI VISION OCR FALLBACK =====
+// Used ONLY when the default local pipeline (Tesseract / pdf.js text layer) fails to
+// read a file. This keeps everything local-first and fast, and only spends an API call
+// on the rare page/image that the local engine genuinely can't handle (e.g. very messy
+// handwriting, unusual fonts, exotic scripts Tesseract wasn't loaded for).
+const GEMINI_VISION_OCR_PROMPT =
+  'You are an OCR engine. Transcribe every piece of readable text in this image exactly ' +
+  'as written, preserving line breaks, bullet points, and reading order. Write any ' +
+  'mathematical expressions using LaTeX wrapped in $$...$$. Do not add commentary, ' +
+  'headers, or explanations of your own — output only the transcribed content. If the ' +
+  'image genuinely has no readable text, respond with exactly: [NO_TEXT_FOUND]';
+
+function _parseDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,(.*)$/s.exec(String(dataUrl || ''));
+  if (!match) return null;
+  return { mimeType: match[1], base64Data: match[2] };
+}
+
+async function callGeminiVisionForOCR(cfg, base64Data, mimeType) {
+  const geminiUrl = cfg.apiUrl.endsWith('?key=') ? cfg.apiUrl + encodeURIComponent(cfg.apiKey) :
+    cfg.apiUrl + (cfg.apiUrl.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(cfg.apiKey);
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: GEMINI_VISION_OCR_PROMPT },
+        { inline_data: { mime_type: mimeType, data: base64Data } }
+      ]
+    }],
+    generationConfig: { temperature: 0 }
+  };
+  const response = await fetch(geminiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    let detail = '';
+    try { const j = await response.json(); detail = j.error?.message || JSON.stringify(j); }
+    catch (_) { try { detail = await response.text(); } catch (_2) {} }
+    throw new Error(`Gemini Vision OCR error (${response.status}): ${detail || 'no further details returned'}`);
+  }
+  const data = await response.json();
+  const text = (data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '').trim();
+  if (!text || /^\[NO_TEXT_FOUND\]$/i.test(text)) return '';
+  return text;
+}
+
+// Runs Gemini Vision OCR against a data URL (data:<mime>;base64,<data>). Returns '' if
+// no Gemini model is configured, if Gemini finds no text, or if the call fails —
+// callers should treat that as "fallback unavailable" and keep the local OCR result.
+async function runGeminiVisionOCRFromDataUrl(dataUrl, label) {
+  const cfg = typeof findGeminiModelConfig === 'function' ? findGeminiModelConfig() : null;
+  if (!cfg) return '';
+  const parsed = _parseDataUrl(dataUrl);
+  if (!parsed) return '';
+  try {
+    return await callGeminiVisionForOCR(cfg, parsed.base64Data, parsed.mimeType);
+  } catch (err) {
+    console.warn(`Gemini Vision OCR fallback failed${label ? ` for ${label}` : ''}:`, err);
+    return '';
+  }
+}
+
 // ===== RUN OCR ON IMAGE FILE =====
 async function runOcrOnImageFile(file) {
   const dataUrl = await new Promise((resolve, reject) => {
@@ -476,6 +540,20 @@ async function runOcrOnImageFile(file) {
       console.warn('Clean-image OCR retry failed:', retryError);
     }
     return result;
+  }
+
+  // Local OCR found nothing at all — this is exactly the "default system fails to read
+  // the file" case. Fall back to Gemini Vision if a Gemini model is configured.
+  const visionText = await runGeminiVisionOCRFromDataUrl(dataUrl, file.name);
+  if (visionText) {
+    return {
+      text: visionText,
+      confidence: 60,
+      passes: (result && result.passes) || 0,
+      lineCount: getOcrLineCount(visionText),
+      skipped: false,
+      source: 'gemini-vision'
+    };
   }
   return result || { text: '', confidence: 0, passes: 0, skipped: true, skipReason: 'No readable text detected.' };
 }
@@ -683,6 +761,35 @@ async function extractTextFromPDFWithOCRFallback(file, startPage, endPage) {
 
           // 4. Use the full OCR pipeline
           const result = await recognizeImageWithOcr(canvas);
+          if (result && String(result.text || '').trim()) {
+            return {
+              idx,
+              pageNum,
+              text: result.text || '',
+              confidence: result.confidence || 0,
+              skipped: result.skipped || false,
+              skipReason: result.skipReason || '',
+              passes: result.passes,
+              lineCount: result.lineCount
+            };
+          }
+
+          // Local OCR found nothing on this scanned page — try Gemini Vision before
+          // giving up on it, same "default system failed" fallback used for images.
+          const visionText = await runGeminiVisionOCRFromDataUrl(canvas.toDataURL('image/jpeg', 0.92), `page ${pageNum}`);
+          if (visionText) {
+            return {
+              idx,
+              pageNum,
+              text: visionText,
+              confidence: 60,
+              skipped: false,
+              skipReason: '',
+              passes: result.passes,
+              lineCount: getOcrLineCount(visionText),
+              source: 'gemini-vision'
+            };
+          }
           return {
             idx,
             pageNum,
@@ -816,7 +923,7 @@ async function handleFileUploads(fileList) {
       if (typeof ProgressUI !== 'undefined' && ProgressUI.show) {
         ProgressUI.show(
           imageJobs.length > 1 ? `Reading ${imageJobs.length} images with Studio OCR` : `Reading ${imageJobs[0].file.name} with Studio OCR`,
-          'Local OCR is extracting text and equations. AI Vision is not used.'
+          'Local OCR is extracting text and equations. Gemini Vision is used only if local OCR can\'t read a file.'
         );
         ProgressUI.clearPreview();
       }
@@ -1065,4 +1172,6 @@ window.handleSidebarFileDrop = handleSidebarFileDrop;
 window.renderAttachmentBar = renderAttachmentBar;
 window.runOcrOnImageFile = runOcrOnImageFile;
 window.extractTextFromPDFWithOCRFallback = extractTextFromPDFWithOCRFallback;
+window.runGeminiVisionOCRFromDataUrl = runGeminiVisionOCRFromDataUrl;
+window.callGeminiVisionForOCR = callGeminiVisionForOCR;
 window.terminateOcrWorkersForCancellation = terminateOcrWorkersForCancellation;
